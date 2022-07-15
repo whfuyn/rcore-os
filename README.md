@@ -22,6 +22,16 @@ $ git submodule update --init
 $ make run
 ```
 
+同上，但是会等待gdb接入。
+```
+$ make debug
+```
+
+启动gdb并接入。
+```
+$ make gdb
+```
+
 ## 踩坑记录
 
 > error: `sys_common::condvar::Condvar::new` is not yet stable as a const fn

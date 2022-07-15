@@ -1,9 +1,11 @@
 .PHONY: build run clean debug gdb
 
 OS := os
-RUSTSBI_QEMU := rustsbi-qemu
 OS_OUT_DIR := $(OS)/target/riscv64gc-unknown-none-elf/release
+
+RUSTSBI_QEMU := rustsbi-qemu
 RUSTSBI_QEMU_OUT_DIR := $(RUSTSBI_QEMU)/target/riscv64imac-unknown-none-elf/release
+
 STRIP := rust-objcopy \
 		--binary-architecture=riscv64 \
 		--strip-all \
