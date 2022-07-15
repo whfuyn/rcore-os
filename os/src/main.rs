@@ -3,7 +3,7 @@
 #![feature(format_args_nl)]
 
 use core::arch::global_asm;
-use rcore_os::*;
+use os::*;
 
 global_asm!(
     include_str!("entry.asm")

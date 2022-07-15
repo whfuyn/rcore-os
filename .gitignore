@@ -1,4 +1,3 @@
 target
-rustsbi-qemu.bin
 Cargo.lock
 .gdb_history
