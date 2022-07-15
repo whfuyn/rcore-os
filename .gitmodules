@@ -1,0 +1,3 @@
+[submodule "rustsbi-qemu"]
+	path = rustsbi-qemu
+	url = https://github.com/rustsbi/rustsbi-qemu
