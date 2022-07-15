@@ -1,48 +1,44 @@
 .PHONY: build run clean debug gdb
 
 OS := os
+RUSTSBI_QEMU := rustsbi-qemu
+OS_OUT_DIR := $(OS)/target/riscv64gc-unknown-none-elf/release
+RUSTSBI_QEMU_OUT_DIR := $(RUSTSBI_QEMU)/target/riscv64imac-unknown-none-elf/release
 STRIP := rust-objcopy \
 		--binary-architecture=riscv64 \
 		--strip-all \
-		-O binary \
-TARGET := target/riscv64gc-unknown-none-elf/release
+		-O binary
 
-rustsbi-qemu.bin: rustsbi-qemu
-	cd rustsbi-qemu && \
-	cargo build --release -Zbuild-std -p rustsbi-qemu && \
-	$(STRIP) \
-		$(TARGET)/rustsbi-qemu \
-		$(TARGET)/rustsbi-qemu.bin
+$(RUSTSBI_QEMU).bin: $(RUSTSBI_QEMU)
+	cd $(RUSTSBI_QEMU) && cargo make
 
 build:
-	cd os && \
-	cargo build --release && \
+	cd $(OS) && cargo build --release
 	$(STRIP) \
-		$(TARGET)/$(OS) \
-		$(TARGET)/$(OS).bin
+		$(OS_OUT_DIR)/$(OS) \
+		$(OS_OUT_DIR)/$(OS).bin
 
-run: rustsbi-qemu.bin build
+run: $(RUSTSBI_QEMU).bin build
 	@qemu-system-riscv64 \
 		-machine virt \
 		-nographic \
-		-bios rustsbi-qemu/$(TARGET)/rustsbi-qemu.bin
-		-device loader,file=$(OS)/$(TARGET)/$(OS).bin,addr=0x80200000
+		-bios $(RUSTSBI_QEMU_OUT_DIR)/$(RUSTSBI_QEMU).bin \
+		-device loader,file=$(OS_OUT_DIR)/$(OS).bin,addr=0x80200000
 
-debug: rustsbi-qemu.bin build
+debug: $(RUSTSBI_QEMU).bin build
 	@qemu-system-riscv64 \
 		-machine virt \
 		-nographic \
-		-bios rustsbi-qemu/$(TARGET)/rustsbi-qemu.bin
-		-device loader,file=$(OS)/$(TARGET)/$(OS).bin,addr=0x80200000 \
+		-bios $(RUSTSBI_QEMU_OUT_DIR)/$(RUSTSBI_QEMU).bin \
+		-device loader,file=$(OS_OUT_DIR)/$(OS).bin,addr=0x80200000 \
 		-s -S
 
 gdb: 
 	riscv64-unknown-elf-gdb \
-		-ex 'file $(OS)/$(TARGET)/$(OS)' \
+		-ex 'file $(OS_OUT_DIR)/$(OS)' \
 		-ex 'set arch riscv:rv64' \
 		-ex 'target remote localhost:1234'
 
 clean:
-	@cd rustsbi-qemu && cargo clean
-	@rm -f rustsbi-qemu.bin
-	@cargo clean
+	@cd $(RUSTSBI_QEMU) && cargo clean
+	@cd os && cargo clean

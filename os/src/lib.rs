@@ -6,6 +6,9 @@ pub mod lang_items;
 pub mod console;
 pub mod sbi;
 
+core::arch::global_asm!(
+    include_str!("entry.asm")
+);
 
 pub fn clear_bss() {
     extern "C" {
