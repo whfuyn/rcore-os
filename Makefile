@@ -1,4 +1,4 @@
-.PHONY: build run clean
+.PHONY: build run clean debug gdb
 
 OS := rcore-os
 STRIP := rust-objcopy \
@@ -6,7 +6,7 @@ STRIP := rust-objcopy \
 		--strip-all \
 		-O binary \
 
-rustsbi-qemu.bin:
+rustsbi-qemu.bin: rustsbi-qemu
 	cd rustsbi-qemu && \
 	cargo build --release -Zbuild-std -p rustsbi-qemu && \
 	$(STRIP) \
@@ -26,7 +26,21 @@ run: rustsbi-qemu.bin build
 		-bios rustsbi-qemu.bin \
 		-device loader,file=target/riscv64gc-unknown-none-elf/release/$(OS).bin,addr=0x80200000
 
+debug: rustsbi-qemu.bin build
+	@qemu-system-riscv64 \
+		-machine virt \
+		-nographic \
+		-bios rustsbi-qemu.bin \
+		-device loader,file=target/riscv64gc-unknown-none-elf/release/$(OS).bin,addr=0x80200000 \
+		-s -S
+
+gdb: 
+	riscv64-unknown-elf-gdb \
+		-ex 'file target/riscv64gc-unknown-none-elf/release/$(OS)' \
+		-ex 'set arch riscv:rv64' \
+		-ex 'target remote localhost:1234'
+
 clean:
-	cd rustsbi-qemu && cargo clean
-	rm rustsbi-qemu.bin
-	cargo clean
+	@cd rustsbi-qemu && cargo clean
+	@rm -f rustsbi-qemu.bin
+	@cargo clean
