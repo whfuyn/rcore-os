@@ -1,4 +1,4 @@
-.PHONY: build run
+.PHONY: build run clean
 
 OS := rcore-os
 STRIP := rust-objcopy \
@@ -19,9 +19,14 @@ build:
 		target/riscv64gc-unknown-none-elf/release/$(OS) \
 		target/riscv64gc-unknown-none-elf/release/$(OS).bin
 
-run: build rustsbi-qemu.bin
+run: rustsbi-qemu.bin build
 	@qemu-system-riscv64 \
 		-machine virt \
 		-nographic \
 		-bios rustsbi-qemu.bin \
 		-device loader,file=target/riscv64gc-unknown-none-elf/release/$(OS).bin,addr=0x80200000
+
+clean:
+	cd rustsbi-qemu && cargo clean
+	rm rustsbi-qemu.bin
+	cargo clean
