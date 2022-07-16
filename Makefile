@@ -11,7 +11,7 @@ STRIP := rust-objcopy \
 		--strip-all \
 		-O binary
 
-$(RUSTSBI_QEMU).bin: $(RUSTSBI_QEMU)
+$(RUSTSBI_QEMU).bin:
 	cd $(RUSTSBI_QEMU) && cargo make
 
 build:
