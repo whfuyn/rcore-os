@@ -4,7 +4,24 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+riscv = "0.8"
 
 [[bin]]
 name = "hello-world"
-path = "src/bin/hello_world.rs"
+path = "src/bin/00hello_world.rs"
+
+[[bin]]
+name = "store-fault"
+path = "src/bin/01store_fault.rs"
+
+[[bin]]
+name = "power"
+path = "src/bin/02power.rs"
+
+[[bin]]
+name = "priv-inst"
+path = "src/bin/03priv_inst.rs"
+
+[[bin]]
+name = "priv-csr"
+path = "src/bin/04priv_csr.rs"
