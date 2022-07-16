@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use std::process::{ Command, Stdio };
+use std::process::Command;
 use std::fs;
 
 #[derive(Debug, Deserialize)]
@@ -25,12 +25,10 @@ fn main() {
     
     match build_user_lib_res {
         Ok(output) if output.status.success() => (),
-        Err(e) => panic!("failed to build user lib: {e}"),
-        // _ => panic!("failed to build user lib"),
         Ok(output) => {
-            println!("stdout: {}", String::from_utf8_lossy(&output.stdout));
             panic!("stderr: {}", String::from_utf8_lossy(&output.stderr));
         }
+        Err(e) => panic!("failed to build user lib: {e}"),
     }
 
     let user_lib_toml = fs::read_to_string("../user-lib/Cargo.toml")
@@ -59,8 +57,10 @@ fn main() {
 
         match strip_user_lib_res {
             Ok(output) if output.status.success() => (),
+            Ok(output) => {
+                panic!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+            }
             Err(e) => panic!("failed to run strip cmd for `{bin_path}`: {e}"),
-            _ => panic!("failed to strip bin `{bin_path}`"),
         }
         stripped_bin_path
     }).collect();
@@ -83,20 +83,21 @@ _num_app:
     );
 
     for i in 0..bins.len() {
-        let entry = format!(
+        let start_entry = format!(
 "
     .quad app_{i}_start\
 "
         );
-        link_app_asm.push_str(&entry);
-    }
-    let end_entry = format!(
+        link_app_asm.push_str(&start_entry);
+        if i + 1 == bins.len() {
+            let end_entry = format!(
 "
-    .quad app_{}_end
+    .quad app_{i}_end
 ",
-        bins.len()
-    );
-    link_app_asm.push_str(&end_entry);
+            );
+            link_app_asm.push_str(&end_entry);
+        }
+    }
 
     for (i, stripped_bin_path) in stripped_bin_paths.iter().enumerate() {
         let entry = format!(

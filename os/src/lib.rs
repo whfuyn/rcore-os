@@ -5,6 +5,7 @@
 pub mod lang_items;
 pub mod console;
 pub mod sbi;
+pub mod batch;
 
 core::arch::global_asm!(
     include_str!("entry.asm")
