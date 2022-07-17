@@ -10,12 +10,16 @@ pub mod syscall;
 #[link_section = ".text.entry"]
 pub extern "C" fn _start() -> ! {
     clear_bss();
-    syscall::sys_exit(main());
+    extern {
+        fn main() -> i32;
+    }
+    let xstate = unsafe { main() };
+    syscall::sys_exit(xstate);
 }
 
 #[linkage = "weak"]
 #[no_mangle]
-fn main() -> i32 {
+pub fn main() -> i32 {
     panic!("Cannot find main!");
 }
 

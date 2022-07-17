@@ -42,5 +42,10 @@ gdb:
 		-ex 'target remote localhost:1234'
 
 clean:
+	@cd os && cargo clean && rm -f src/link_app.S
+	@cd user-lib && cargo clean
+
+clean-all:
 	@cd $(RUSTSBI_QEMU) && cargo clean
 	@cd os && cargo clean
+	@cd user-lib && cargo clean

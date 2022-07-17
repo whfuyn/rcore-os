@@ -1,37 +1,36 @@
+mod context;
+
 use core::arch::global_asm;
 use riscv::register::{
     stvec,
+    stval,
     scause::{
         self,
         Trap, Interrupt, Exception,
     },
 };
+pub use context::TrapContext;
 use crate::syscall::syscall;
-use crate::batch::APP_MANAGER;
+use crate::batch::run_next_app;
+use crate::println;
+
 
 global_asm!(include_str!("trap/trap.S"));
 
 
 pub fn init() {
     extern "C" {
-        fn __all_trap();
+        fn __all_traps();
     }
     unsafe {
-        stvec::write(__all_trap as usize, stvec::TrapMode::Direct);
+        stvec::write(__all_traps as usize, stvec::TrapMode::Direct);
     }
-}
-
-
-#[repr(C)]
-pub struct TrapContext {
-    pub x: [usize; 32],
-    pub sstatus: usize,
-    pub sepc: usize,
 }
 
 #[no_mangle]
-pub extern "C" fn trap_handler(cx: &mut TrapContext) {
+pub extern "C" fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
     let scause = scause::read();
+    let stval = stval::read();
 
     match scause.cause() {
         Trap::Exception(Exception::UserEnvCall) => {
@@ -41,10 +40,20 @@ pub extern "C" fn trap_handler(cx: &mut TrapContext) {
             cx.x[10] = syscall(id, args) as usize;
         }
         Trap::Exception(Exception::StoreFault | Exception::StorePageFault) => {
-            todo!()
+            println!("[kernel] PageFault in application, kernel killed it.");
+            run_next_app();
         }
         Trap::Exception(Exception::IllegalInstruction) => {
-            todo!()
+            println!("[kernel] IllegalInstruction in application, kernel killed it.");
+            run_next_app();
+        }
+        unknown => {
+            panic!(
+                "Unsupported trap {:?}, stval = {:#x}!",
+                unknown,
+                stval
+            );
         }
     }
+    cx
 }

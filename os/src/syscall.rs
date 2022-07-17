@@ -1,4 +1,5 @@
 use crate::sbi::shutdown;
+use crate::batch::run_next_app;
 use crate::print;
 
 const STDOUT: usize = 1;
@@ -8,7 +9,7 @@ const SYSCALL_WRITE: usize = 64;
 pub fn syscall(id: usize, args: [usize; 3]) -> isize {
     match id {
         SYSCALL_EXIT => {
-            todo!()
+            run_next_app();
         }
         SYSCALL_WRITE => {
             let fd = args[0];

@@ -14,6 +14,8 @@ struct UserLibToml {
 }
 
 fn main() {
+    println!("cargo:rerun-if-changed=../user-lib/src");
+    println!("cargo:rerun-if-changed=../user-lib/Cargo.toml");
     let build_user_lib_res = Command::new("cargo")
         .args([
             "build",

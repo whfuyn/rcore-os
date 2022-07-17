@@ -6,7 +6,10 @@ edition = "2021"
 [dependencies]
 spin = "0.9"
 lazy_static = { version = "1", features = ["spin_no_std"] }
-riscv = "0.8"
+# There aren't associated methods for manipulating Sstatus in this official
+# riscv crate.
+# riscv = "0.8"
+riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
 
 
 [build-dependencies]

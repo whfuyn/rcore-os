@@ -11,10 +11,12 @@ global_asm!(
 
 #[no_mangle]
 pub fn rust_main() {
-    clear_bss();
-    let mut app_manager = batch::APP_MANAGER.lock();
-    app_manager.print_app_info();
-    app_manager.load_app(0);
-    println!("Hello, world!");
+    init();
+    let app_mgr = batch::APP_MANAGER.lock();
+    app_mgr.print_app_info();
+    drop(app_mgr);
+    println!("Running apps..");
+    batch::run_next_app();
+    
     sbi::shutdown();
 }

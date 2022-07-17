@@ -1,6 +1,7 @@
 #![no_std]
 #![no_main]
 #![feature(format_args_nl)]
+#![feature(sync_unsafe_cell)]
 
 pub mod lang_items;
 pub mod console;
@@ -28,5 +29,4 @@ pub fn clear_bss() {
 pub fn init() {
     clear_bss();
     trap::init();
-
 }

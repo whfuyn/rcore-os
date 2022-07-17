@@ -1,17 +1,17 @@
 .altmacro
-
 .macro SAVE_GP n
     sd x\n, \n*8(sp)
 .endm
-
 .macro LOAD_GP n
     ld x\n, \n*8(sp)
 .endm
 
-.align 2
-__all_trap:
+    .section .text
+    .align 2
+    .global __all_traps
+__all_traps:
     csrrw sp, sscratch, sp
-    addi sp, sp, -34*8,
+    addi sp, sp, -34*8
     SAVE_GP 1
     SAVE_GP 3
     .set n, 5
@@ -26,15 +26,16 @@ __all_trap:
     sd t1, 33*8(sp)
 
     csrr t2, sscratch
-    sd t1, 2*8(sp)
+    sd t2, 2*8(sp)
 
     # We pass &mut TrapContext to the handler
     mv a0, sp
     call trap_handler
 
-.align 2
+    .global __restore
 __restore:
     # trap_handler returns the kernel sp
+    # This also handle the app init case.
     mv sp, a0
 
     ld t0, 32*8(sp)
@@ -54,5 +55,5 @@ __restore:
     .endr
 
     addi sp, sp, 34*8
-    csrw sp, sscratch, sp
+    csrrw sp, sscratch, sp
     sret
