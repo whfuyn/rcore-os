@@ -6,6 +6,8 @@ edition = "2021"
 [dependencies]
 spin = "0.9"
 lazy_static = { version = "1", features = ["spin_no_std"] }
+riscv = "0.8"
+
 
 [build-dependencies]
 toml = "0.5"
