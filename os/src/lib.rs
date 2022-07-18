@@ -9,6 +9,7 @@ pub mod lang_items;
 pub mod sbi;
 pub mod syscall;
 pub mod trap;
+pub mod task;
 
 core::arch::global_asm!(include_str!("entry.asm"));
 
