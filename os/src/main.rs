@@ -5,9 +5,7 @@
 use core::arch::global_asm;
 use os::*;
 
-global_asm!(
-    include_str!("link_app.S")
-);
+global_asm!(include_str!("link_app.S"));
 
 #[no_mangle]
 pub fn rust_main() {
@@ -17,6 +15,4 @@ pub fn rust_main() {
     drop(app_mgr);
     println!("Running apps..");
     batch::run_next_app();
-    
-    sbi::shutdown();
 }

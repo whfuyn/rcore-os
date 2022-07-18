@@ -1,5 +1,5 @@
-use core::fmt;
 use crate::syscall::sys_write;
+use core::fmt;
 
 struct Stdout;
 

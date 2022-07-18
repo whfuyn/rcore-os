@@ -1,10 +1,10 @@
-use lazy_static::lazy_static;
-use spin::Mutex;
-use riscv::register::sscratch;
-use core::cell::SyncUnsafeCell;
 use crate::println;
 use crate::sbi;
 use crate::trap::TrapContext;
+use core::cell::SyncUnsafeCell;
+use lazy_static::lazy_static;
+use riscv::register::sscratch;
+use spin::Mutex;
 
 const APP_BASE_ADDR: *const u8 = 0x80400000 as *const u8;
 const MAX_APP_NUM: usize = 32;
@@ -12,10 +12,8 @@ const MAX_APP_NUM: usize = 32;
 const KERNEL_STACK_SIZE: usize = 4096 * 2;
 const USER_STACK_SIZE: usize = 4096 * 2;
 
-lazy_static!{
-    pub static ref APP_MANAGER: Mutex<AppManager> = unsafe {
-        Mutex::new(AppManager::new())
-    };
+lazy_static! {
+    pub static ref APP_MANAGER: Mutex<AppManager> = unsafe { Mutex::new(AppManager::new()) };
 }
 
 #[repr(align(4096))]
@@ -38,7 +36,8 @@ impl KernelStack {
 
     pub fn push_context(&self, cx: TrapContext) -> *mut u8 {
         unsafe {
-            let sp = self.get_sp()
+            let sp = self
+                .get_sp()
                 .offset(-(core::mem::size_of::<TrapContext>() as isize));
             (sp as *mut TrapContext).write(cx);
             sp
@@ -68,14 +67,19 @@ impl AppManager {
             fn _num_app();
         }
         let ptr = _num_app as *const usize;
+        // TODO: is volatile op necessary?
         let num_app = core::cmp::min(ptr.read_volatile(), MAX_APP_NUM);
 
         let mut app_start = [0; MAX_APP_NUM + 1];
         // The last one is app_end
         for i in 0..=num_app {
-            app_start[i] = ptr.offset((1 + i) as isize).read_volatile();
+            app_start[i] = ptr.add(1 + i).read_volatile();
         }
-        Self { num_app, current_app: 0, app_start }
+        Self {
+            num_app,
+            current_app: 0,
+            app_start,
+        }
     }
 
     pub fn print_app_info(&self) {
@@ -99,9 +103,7 @@ impl AppManager {
         let app_start = self.app_start[app_id];
         let app_size = self.app_start[app_id + 1].saturating_sub(app_start);
 
-        core::ptr::copy_nonoverlapping(
-            app_start as *const u8, APP_BASE_ADDR as *mut u8, app_size
-        );
+        core::ptr::copy_nonoverlapping(app_start as *const u8, APP_BASE_ADDR as *mut u8, app_size);
         core::arch::asm!("fence.i");
     }
 
@@ -110,7 +112,6 @@ impl AppManager {
         self.current_app += 1;
         current_app
     }
-
 }
 
 pub fn init() {
@@ -140,10 +141,7 @@ pub fn run_next_app() -> ! {
         extern "C" {
             fn __restore(cx: usize);
         }
-        println!("__restore..");
-        __restore(
-            KERNEL_STACK.push_context(app_init_cx) as usize
-        );
+        __restore(KERNEL_STACK.push_context(app_init_cx) as usize);
     }
 
     unreachable!("it should have been running the app");

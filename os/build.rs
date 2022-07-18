@@ -1,6 +1,6 @@
 use serde::Deserialize;
-use std::process::Command;
 use std::fs;
+use std::process::Command;
 
 #[derive(Debug, Deserialize)]
 struct Binary {
@@ -21,10 +21,11 @@ fn main() {
             "build",
             "--release",
             "--bins",
-            "--manifest-path", "../user-lib/Cargo.toml",
+            "--manifest-path",
+            "../user-lib/Cargo.toml",
         ])
         .output();
-    
+
     match build_user_lib_res {
         Ok(output) if output.status.success() => (),
         Ok(output) => {
@@ -33,8 +34,8 @@ fn main() {
         Err(e) => panic!("failed to build user lib: {e}"),
     }
 
-    let user_lib_toml = fs::read_to_string("../user-lib/Cargo.toml")
-        .expect("cannot read user-lib Cargo.toml");
+    let user_lib_toml =
+        fs::read_to_string("../user-lib/Cargo.toml").expect("cannot read user-lib Cargo.toml");
     let bins: Vec<String> = toml::from_str::<UserLibToml>(&user_lib_toml)
         .expect("cannot parse user-lib [[bin]]")
         .bin
@@ -43,39 +44,42 @@ fn main() {
         .collect();
 
     let user_lib_out_dir = "../user-lib/target/riscv64gc-unknown-none-elf/release";
-    let stripped_bin_paths: Vec<String> = bins.iter().map(|bin| {
-        let bin_path = format!("{user_lib_out_dir}/{bin}");
-        let stripped_bin_path = format!("{bin_path}.bin");
+    let stripped_bin_paths: Vec<String> = bins
+        .iter()
+        .map(|bin| {
+            let bin_path = format!("{user_lib_out_dir}/{bin}");
+            let stripped_bin_path = format!("{bin_path}.bin");
 
-        let strip_user_lib_res = Command::new("rust-objcopy")
-            .args([
-                "--binary-architecture=riscv64",
-                "--strip-all",
-                "-O", "binary",
-                &bin_path,
-                &stripped_bin_path,
-            ])
-            .output();
+            let strip_user_lib_res = Command::new("rust-objcopy")
+                .args([
+                    "--binary-architecture=riscv64",
+                    "--strip-all",
+                    "-O",
+                    "binary",
+                    &bin_path,
+                    &stripped_bin_path,
+                ])
+                .output();
 
-        match strip_user_lib_res {
-            Ok(output) if output.status.success() => (),
-            Ok(output) => {
-                panic!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+            match strip_user_lib_res {
+                Ok(output) if output.status.success() => (),
+                Ok(output) => {
+                    panic!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+                }
+                Err(e) => panic!("failed to run strip cmd for `{bin_path}`: {e}"),
             }
-            Err(e) => panic!("failed to run strip cmd for `{bin_path}`: {e}"),
-        }
-        stripped_bin_path
-    }).collect();
+            stripped_bin_path
+        })
+        .collect();
 
     let link_app_asm = build_link_app_asm(bins, stripped_bin_paths);
     fs::write("src/link_app.S", link_app_asm).expect("cannot write link_app.S");
-
 }
 
 fn build_link_app_asm(bins: Vec<String>, stripped_bin_paths: Vec<String>) -> String {
     // Build start and end addr for each app.
     let mut link_app_asm = format!(
-"    .align 3
+        "    .align 3
     .section .data
     .global _num_app
 _num_app:
@@ -86,14 +90,14 @@ _num_app:
 
     for i in 0..bins.len() {
         let start_entry = format!(
-"
+            "
     .quad app_{i}_start\
 "
         );
         link_app_asm.push_str(&start_entry);
         if i + 1 == bins.len() {
             let end_entry = format!(
-"
+                "
     .quad app_{i}_end
 ",
             );
@@ -103,7 +107,7 @@ _num_app:
 
     for (i, stripped_bin_path) in stripped_bin_paths.iter().enumerate() {
         let entry = format!(
-"
+            "
     .section .data
     .global app_{i}_start
     .global app_{i}_end

@@ -2,7 +2,6 @@
 #![no_main]
 #![feature(format_args_nl)]
 
-use core::arch::asm;
 use riscv::register::sstatus::{self, SPP};
 use user_lib::println;
 
@@ -15,4 +14,3 @@ fn main() -> i32 {
     }
     0
 }
-

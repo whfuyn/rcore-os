@@ -10,10 +10,7 @@ pub mod syscall;
 #[link_section = ".text.entry"]
 pub extern "C" fn _start() -> ! {
     clear_bss();
-    extern {
-        fn main() -> i32;
-    }
-    let xstate = unsafe { main() };
+    let xstate = main();
     syscall::sys_exit(xstate);
 }
 
@@ -28,9 +25,5 @@ pub fn clear_bss() {
         fn sbss();
         fn ebss();
     }
-    (sbss as usize .. ebss as usize).for_each(|addr| {
-        unsafe {
-            (addr as *mut u8).write_volatile(0)
-        }
-    })
+    (sbss as usize..ebss as usize).for_each(|addr| unsafe { (addr as *mut u8).write_volatile(0) })
 }

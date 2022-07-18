@@ -26,4 +26,3 @@ impl TrapContext {
         cx
     }
 }
-

@@ -1,22 +1,16 @@
 mod context;
 
-use core::arch::global_asm;
-use riscv::register::{
-    stvec,
-    stval,
-    scause::{
-        self,
-        Trap, Interrupt, Exception,
-    },
-};
-pub use context::TrapContext;
-use crate::syscall::syscall;
 use crate::batch::run_next_app;
 use crate::println;
-
+use crate::syscall::syscall;
+pub use context::TrapContext;
+use core::arch::global_asm;
+use riscv::register::{
+    scause::{self, Exception, Trap},
+    stval, stvec,
+};
 
 global_asm!(include_str!("trap/trap.S"));
-
 
 pub fn init() {
     extern "C" {
@@ -48,11 +42,7 @@ pub extern "C" fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
             run_next_app();
         }
         unknown => {
-            panic!(
-                "Unsupported trap {:?}, stval = {:#x}!",
-                unknown,
-                stval
-            );
+            panic!("Unsupported trap {:?}, stval = {:#x}!", unknown, stval);
         }
     }
     cx

@@ -1,5 +1,5 @@
-use core::arch::asm;
 use constants::*;
+use core::arch::asm;
 
 #[allow(unused)]
 mod constants {
