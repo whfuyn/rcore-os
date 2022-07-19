@@ -43,9 +43,9 @@ gdb:
 
 clean:
 	@cd os && cargo clean && rm -f src/link_app.S
-	@cd user-lib && cargo clean
+	@cd user-lib && cargo clean && rm -f src/linker.ld
 
 clean-all:
 	@cd $(RUSTSBI_QEMU) && cargo clean
-	@cd os && cargo clean
-	@cd user-lib && cargo clean
+	@cd os && cargo clean && rm -f src/link_app.S
+	@cd user-lib && cargo clean && rm -f src/linker.ld

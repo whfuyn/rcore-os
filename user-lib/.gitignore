@@ -1,1 +1,2 @@
-src/linker.ld
+# Don't ignore src/linker.ld, otherwise build.rs will ignore its changes.
+# src/linker.ld
