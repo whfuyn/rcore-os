@@ -8,12 +8,12 @@
 .endm
 
     .global __switch
-    .p2align 1
+    .p2align 2
 __switch:
     sd ra, 0*8(a0)
     sd sp, 1*8(a0)
 
-    .set n 0
+    .set n, 0
     .rept 12
         SAVE_SN %n
         .set n, n+1
@@ -22,7 +22,7 @@ __switch:
     ld ra, 0*8(a1)
     ld sp, 1*8(a1)
 
-    .set n 0
+    .set n, 0
     .rept 12
         LOAD_SN %n
         .set n, n+1

@@ -7,7 +7,7 @@
 .endm
 
     .section .text
-    .align 2
+    .p2align 2
     .global __all_traps
 __all_traps:
     csrrw sp, sscratch, sp
@@ -35,7 +35,7 @@ __all_traps:
     .global __restore
 __restore:
     # trap_handler returns the kernel sp
-    # This also handle the app init case.
+    # This also handles the app init case.
     mv sp, a0
 
     ld t0, 32*8(sp)

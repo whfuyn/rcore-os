@@ -27,3 +27,7 @@ pub fn clear_bss() {
     }
     (sbss as usize..ebss as usize).for_each(|addr| unsafe { (addr as *mut u8).write_volatile(0) })
 }
+
+pub fn yield_() {
+    syscall::sys_yield();
+}

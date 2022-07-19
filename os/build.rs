@@ -2,6 +2,9 @@ use serde::Deserialize;
 use std::fs;
 use std::process::Command;
 
+const APP_BASE_ADDR: *mut u8 = 0x80400000 as *mut u8;
+const MAX_APP_SIZE: usize = 0x20000;
+
 #[derive(Debug, Deserialize)]
 struct Binary {
     name: String,
@@ -13,26 +16,31 @@ struct UserLibToml {
     bin: Vec<Binary>,
 }
 
-fn main() {
-    println!("cargo:rerun-if-changed=../user-lib/src");
-    println!("cargo:rerun-if-changed=../user-lib/Cargo.toml");
-    let build_user_lib_res = Command::new("cargo")
+fn build_user_bin(name: &str, base_addr: usize) {
+    let build_user_bin_res = Command::new("cargo")
+        .env("BASE_ADDRESS", format!("0x{:X}", base_addr))
         .args([
             "build",
             "--release",
-            "--bins",
+            "--bin",
+            name,
             "--manifest-path",
             "../user-lib/Cargo.toml",
         ])
         .output();
 
-    match build_user_lib_res {
+    match build_user_bin_res {
         Ok(output) if output.status.success() => (),
         Ok(output) => {
             panic!("stderr: {}", String::from_utf8_lossy(&output.stderr));
         }
         Err(e) => panic!("failed to build user lib: {e}"),
     }
+}
+
+fn main() {
+    println!("cargo:rerun-if-changed=../user-lib/src");
+    println!("cargo:rerun-if-changed=../user-lib/Cargo.toml");
 
     let user_lib_toml =
         fs::read_to_string("../user-lib/Cargo.toml").expect("cannot read user-lib Cargo.toml");
@@ -42,6 +50,13 @@ fn main() {
         .into_iter()
         .map(|b| b.name)
         .collect();
+    
+    bins.iter().enumerate().for_each(|(i, bin)|{
+        let base_addr = unsafe {
+            APP_BASE_ADDR.add(i * MAX_APP_SIZE) as usize
+        };
+        build_user_bin(bin, base_addr)
+    });
 
     let user_lib_out_dir = "../user-lib/target/riscv64gc-unknown-none-elf/release";
     let stripped_bin_paths: Vec<String> = bins
@@ -79,10 +94,10 @@ fn main() {
 fn build_link_app_asm(bins: Vec<String>, stripped_bin_paths: Vec<String>) -> String {
     // Build start and end addr for each app.
     let mut link_app_asm = format!(
-        "    .align 3
+        "    .p2align 3
     .section .data
-    .global _num_app
-_num_app:
+    .global _app_info_table
+_app_info_table:
     .quad {}\
 ",
         bins.len()

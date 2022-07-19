@@ -139,10 +139,8 @@ pub fn run_next_app() -> ! {
     drop(app_mgr);
     unsafe {
         extern "C" {
-            fn __restore(cx: usize);
+            fn __restore(cx: usize) -> !;
         }
         __restore(KERNEL_STACK.push_context(app_init_cx) as usize);
     }
-
-    unreachable!("it should have been running the app");
 }

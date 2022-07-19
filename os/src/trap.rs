@@ -1,6 +1,6 @@
 mod context;
 
-use crate::batch::run_next_app;
+use crate::task::exit_task_and_run_next;
 use crate::println;
 use crate::syscall::syscall;
 pub use context::TrapContext;
@@ -11,11 +11,12 @@ use riscv::register::{
 };
 
 global_asm!(include_str!("trap/trap.S"));
+extern "C" {
+    fn __all_traps();
+    pub fn __restore(cx: usize) -> !;
+}
 
 pub fn init() {
-    extern "C" {
-        fn __all_traps();
-    }
     unsafe {
         stvec::write(__all_traps as usize, stvec::TrapMode::Direct);
     }
@@ -35,11 +36,11 @@ pub extern "C" fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
         }
         Trap::Exception(Exception::StoreFault | Exception::StorePageFault) => {
             println!("[kernel] PageFault in application, kernel killed it.");
-            run_next_app();
+            exit_task_and_run_next();
         }
         Trap::Exception(Exception::IllegalInstruction) => {
             println!("[kernel] IllegalInstruction in application, kernel killed it.");
-            run_next_app();
+            exit_task_and_run_next();
         }
         unknown => {
             panic!("Unsupported trap {:?}, stval = {:#x}!", unknown, stval);

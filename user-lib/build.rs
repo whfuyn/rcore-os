@@ -1,6 +1,9 @@
-OUTPUT_ARCH(riscv)
+use std::fs;
+
+const LINKER_SCRIPT: &str =
+"OUTPUT_ARCH(riscv)
 ENTRY(_start)
-BASE_ADDRESS = 0x80400000;
+BASE_ADDRESS = {BASE_ADDRESS};
 
 SECTIONS
 {
@@ -36,4 +39,11 @@ SECTIONS
         *(.eh_frame)
         *(.debug*)
     }
+}
+";
+
+fn main() {
+    let base_addr = std::env::var("BASE_ADDRESS").unwrap_or("0x80400000".into());
+    let linker_script = LINKER_SCRIPT.replace("{BASE_ADDRESS}", &base_addr);
+    fs::write("src/linker.ld", linker_script).expect("cannot write linker script");
 }
