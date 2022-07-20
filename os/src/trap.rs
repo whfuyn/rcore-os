@@ -31,7 +31,7 @@ pub extern "C" fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
 
     match scause.cause() {
         Trap::Interrupt(Interrupt::SupervisorTimer) => {
-            // println!("schedule---------");
+            // println!("\nscheduling");
             set_next_trigger();
             run_next_task();
         }

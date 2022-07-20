@@ -20,9 +20,14 @@ build:
 		$(OS_OUT_DIR)/$(OS) \
 		$(OS_OUT_DIR)/$(OS).bin
 
-# -bios rustsbi-qemu.bin
-# -bios $(RUSTSBI_QEMU_OUT_DIR)/$(RUSTSBI_QEMU).bin
-run: $(RUSTSBI_QEMU).bin build
+run: build
+	@qemu-system-riscv64 \
+		-machine virt \
+		-nographic \
+		-bios rustsbi-qemu-orig.bin \
+		-device loader,file=$(OS_OUT_DIR)/$(OS).bin,addr=0x80200000
+
+run-self-built: $(RUSTSBI_QEMU).bin build
 	@qemu-system-riscv64 \
 		-machine virt \
 		-nographic \

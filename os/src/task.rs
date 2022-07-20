@@ -1,5 +1,4 @@
 use lazy_static::lazy_static;
-use riscv::register::sstatus::Sstatus;
 use core::cell::SyncUnsafeCell;
 use crate::trap::TrapContext;
 use crate::sbi;
@@ -171,7 +170,7 @@ impl TaskManager {
 }
 
 pub unsafe extern "C" fn start_task() {
-    println!("start task");
+    // println!("start task");
     let task_mgr = TASK_MANAGER.lock();
     let current_task = task_mgr.current_task;
     task_mgr.load_task(current_task);

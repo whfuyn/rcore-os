@@ -2,7 +2,6 @@
 #![no_main]
 #![feature(format_args_nl)]
 
-use core::arch::global_asm;
 use os::*;
 
 #[no_mangle]
