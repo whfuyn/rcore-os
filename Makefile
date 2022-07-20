@@ -20,6 +20,8 @@ build:
 		$(OS_OUT_DIR)/$(OS) \
 		$(OS_OUT_DIR)/$(OS).bin
 
+# -bios rustsbi-qemu.bin
+# -bios $(RUSTSBI_QEMU_OUT_DIR)/$(RUSTSBI_QEMU).bin
 run: $(RUSTSBI_QEMU).bin build
 	@qemu-system-riscv64 \
 		-machine virt \

@@ -26,14 +26,30 @@ riscv = "0.8"
 # name = "priv-csr"
 # path = "src/bin/04priv_csr.rs"
 
-[[bin]]
-name = "write-a"
-path = "src/bin/00write_a.rs"
+# [[bin]]
+# name = "write-a"
+# path = "src/bin/00write_a.rs"
+
+# [[bin]]
+# name = "write-b"
+# path = "src/bin/01write_b.rs"
+
+# [[bin]]
+# name = "write-c"
+# path = "src/bin/02write_c.rs"
 
 [[bin]]
-name = "write-b"
-path = "src/bin/01write_b.rs"
+name = "power3"
+path = "src/bin/00power_3.rs"
 
 [[bin]]
-name = "write-c"
-path = "src/bin/02write_c.rs"
+name = "power5"
+path = "src/bin/01power_5.rs"
+
+[[bin]]
+name = "power7"
+path = "src/bin/02power_7.rs"
+
+[[bin]]
+name = "sleep"
+path = "src/bin/03sleep.rs"

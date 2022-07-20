@@ -7,6 +7,7 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
     unsafe {
         core::arch::asm!(
             // TODO: should I clear x16 for syscall?
+            // "li x16, 0",
             "ecall",
             inlateout("x10") args[0] => ret,
             in("x11") args[1],

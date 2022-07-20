@@ -30,6 +30,7 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
             buffer_size as isize
         }
         SYSCALL_YIELD => {
+            // crate::println!("yield");
             run_next_task();
             0
         }

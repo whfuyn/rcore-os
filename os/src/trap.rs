@@ -1,12 +1,14 @@
 mod context;
 
-use crate::task::exit_task_and_run_next;
+use crate::task::{
+    run_next_task, exit_task_and_run_next, set_next_trigger,
+};
 use crate::println;
 use crate::syscall::syscall;
 pub use context::TrapContext;
 use core::arch::global_asm;
 use riscv::register::{
-    scause::{self, Exception, Trap},
+    scause::{self, Exception, Interrupt, Trap},
     stval, stvec,
 };
 
@@ -28,6 +30,11 @@ pub extern "C" fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
     let stval = stval::read();
 
     match scause.cause() {
+        Trap::Interrupt(Interrupt::SupervisorTimer) => {
+            // println!("schedule---------");
+            set_next_trigger();
+            run_next_task();
+        }
         Trap::Exception(Exception::UserEnvCall) => {
             cx.sepc += 4;
             let id = cx.x[17];

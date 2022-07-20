@@ -31,3 +31,14 @@ pub fn clear_bss() {
 pub fn yield_() {
     syscall::sys_yield();
 }
+
+use riscv::register::time;
+
+// const MICRO_PER_SEC: usize = 1_000_000;
+pub const CLOCK_FREQ: usize = 12500000;
+
+
+pub fn get_time() -> usize {
+    time::read()
+}
+

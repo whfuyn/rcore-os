@@ -5,6 +5,7 @@ use crate::trap::TrapContext;
 use crate::sbi;
 use crate::println;
 use crate::trap::__restore;
+use crate::timer;
 use core::arch::global_asm;
 use core::arch::asm;
 
@@ -191,7 +192,7 @@ pub fn exit_task_and_run_next() {
     let mut task_mgr = TASK_MANAGER.lock();
 
     let current_task = task_mgr.current_task;
-    println!("task `{current_task}` exited");
+    // println!("task `{current_task}` exited");
     let current_tcb = &mut task_mgr.tcbs[current_task];
     current_tcb.status = TaskStatus::Exited;
     drop(task_mgr);
@@ -200,7 +201,8 @@ pub fn exit_task_and_run_next() {
 
 pub fn start() {
     let mut task_mgr = TASK_MANAGER.lock();
-    let first_task = task_mgr.find_next_task_or_exit();
+    let first_task = 0;
+
     task_mgr.current_task = first_task;
     let first_task_cx = &mut task_mgr.tcbs[first_task].cx as *mut TaskContext;
 
@@ -234,4 +236,11 @@ fn get_task_base(task_id: usize) -> *mut u8 {
     unsafe {
         APP_BASE_ADDR.add(task_id * MAX_APP_SIZE)
     }
+}
+
+pub fn set_next_trigger() {
+    const TICKS_PER_SEC: usize = 100;
+    let current_time = timer::get_current_time();
+    let delta = timer::CLOCK_FREQ / TICKS_PER_SEC;
+    sbi::set_timer(current_time + delta);
 }

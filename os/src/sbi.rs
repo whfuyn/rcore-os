@@ -38,3 +38,7 @@ pub fn shutdown() -> ! {
     sbi_call(SBI_SHUTDOWN, 0, 0, 0);
     unreachable!("It should have been shut down")
 }
+
+pub fn set_timer(t: usize) {
+    sbi_call(SBI_SET_TIMER, t, 0, 0);
+}

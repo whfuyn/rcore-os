@@ -11,7 +11,9 @@ pub mod sbi;
 pub mod syscall;
 pub mod trap;
 pub mod task;
+pub mod timer;
 
+use task::set_next_trigger;
 use core::arch::global_asm;
 
 global_asm!(include_str!("entry.S"));
@@ -28,4 +30,10 @@ pub fn clear_bss() {
 pub fn init() {
     clear_bss();
     trap::init();
+
+    unsafe {
+        // riscv::register::sstatus::set_sie();
+        riscv::register::sie::set_stimer();
+    }
+    set_next_trigger();
 }
