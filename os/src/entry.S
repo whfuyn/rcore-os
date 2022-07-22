@@ -7,6 +7,6 @@ _start:
     .section .bss.stack
     .global boot_stack
 boot_stack:
-    .space 4096 * 16
+    .space 4096 * 1024
     .global boot_stack_top
 boot_stack_top:
