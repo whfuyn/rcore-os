@@ -1,16 +1,39 @@
 use crate::print;
 use crate::task::run_next_task;
 use crate::task::exit_and_run_next;
+use crate::task::record_syscall;
+use crate::task::TASK_MANAGER;
+use crate::task::TaskStatus;
+use crate::time;
 
-const STDOUT: usize = 1;
-const SYSCALL_EXIT: usize = 93;
-const SYSCALL_WRITE: usize = 64;
-const SYSCALL_YIELD: usize = 124;
-const SYSCALL_GET_TIME: usize = 169;
-const SYSCALL_TASK_INFO: usize = 410;
+pub const STDOUT: usize = 1;
+pub const MAX_SYSCALL_NUM: usize = 500;
 
+pub const SYSCALL_EXIT: usize = 93;
+pub const SYSCALL_WRITE: usize = 64;
+pub const SYSCALL_YIELD: usize = 124;
+pub const SYSCALL_GET_TIME: usize = 169;
+pub const SYSCALL_TASK_INFO: usize = 410;
+
+#[repr(C)]
+#[derive(Debug)]
+struct TimeVal {
+    pub sec: usize,
+    pub usec: usize,
+}
+
+#[allow(dead_code)]
+#[repr(C)]
+#[derive(Debug)]
+struct TaskInfo {
+    pub status: TaskStatus,
+    pub syscall_times: [u32; MAX_SYSCALL_NUM],
+    pub time: usize
+}
 
 pub fn syscall(id: usize, args: [usize; 3]) -> isize {
+    record_syscall(id);
+
     match id {
         SYSCALL_EXIT => {
             exit_and_run_next();
@@ -38,10 +61,22 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
             0
         }
         SYSCALL_GET_TIME => {
+            let us = time::get_time_us();
+            let time_val = unsafe { &mut *(args[0] as *mut TimeVal)};
+            time_val.sec = us / 1_000_000;
+            time_val.usec = us % 1_000_000;
             0
         }
-
         SYSCALL_TASK_INFO => {
+            let task_info = unsafe { &mut *(args[0] as *mut TaskInfo) };
+
+            let task_mgr = TASK_MANAGER.lock();
+            let status = task_mgr.current_tcb().status;
+            let stat = task_mgr.current_stat();
+
+            task_info.status = status;
+            task_info.syscall_times = stat.syscall_times;
+            task_info.time = stat.time;
             0
         }
         unknown => panic!("unknown syscall `{}`", unknown),

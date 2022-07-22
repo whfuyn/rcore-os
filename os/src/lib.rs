@@ -11,7 +11,7 @@ pub mod sbi;
 pub mod syscall;
 pub mod trap;
 pub mod task;
-pub mod timer;
+pub mod time;
 
 use task::set_next_trigger;
 use core::arch::global_asm;
@@ -20,7 +20,6 @@ global_asm!(include_str!("entry.S"));
 extern "C" {
     fn sbss();
     fn ebss();
-    fn _num_app();
 }
 
 pub fn clear_bss() {

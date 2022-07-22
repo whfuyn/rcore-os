@@ -10,7 +10,8 @@ use crate::trap::TrapContext;
 use crate::sbi;
 use crate::println;
 use crate::trap::__restore;
-use crate::timer;
+use crate::time;
+use crate::syscall::MAX_SYSCALL_NUM;
 
 const MAX_TASK_NUM: usize = 32;
 
@@ -40,12 +41,22 @@ lazy_static! {
     pub static ref TASK_MANAGER: Mutex<TaskManager> = Mutex::new(unsafe { TaskManager::new() });
 }
 
+pub struct TaskInfo {
+    status: TaskStatus,
+    syscall_times: [u32; MAX_SYSCALL_NUM],
+    time: usize
+}
+
+#[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum TaskStatus {
     #[default]
-    Running,
-    Exited,
+    UnInit = 0,
+    Ready = 1,
+    Running = 2,
+    Exited = 3,
 }
+
 
 #[derive(Debug, Clone, Default)]
 #[repr(C)]
@@ -57,20 +68,41 @@ pub struct TaskContext {
 
 #[derive(Debug, Clone)]
 pub struct TaskStat {
-    syscall: [usize; 512],
+    pub time: usize,
+    pub last_scheduled: Option<usize>,
+    pub syscall_times: [u32; MAX_SYSCALL_NUM],
+}
+
+impl TaskStat {
+    pub fn record_schedule_begin(&mut self) {
+        self.last_scheduled = Some(time::get_time());
+    }
+
+    pub fn record_schedule_end(&mut self) {
+        if let Some(last_scheduled) = self.last_scheduled {
+            self.time = time::get_time().checked_sub(last_scheduled).expect("time goes backward");
+        }
+    }
+
+    pub fn record_syscall(&mut self, syscall: usize) {
+        self.syscall_times[syscall] += 1;
+    }
 }
 
 impl Default for TaskStat {
     fn default() -> Self {
-        Self { syscall: [0; 512] }
+        Self {
+            time: 0, 
+            last_scheduled: None,
+            syscall_times: [0; MAX_SYSCALL_NUM],
+        }
     }
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct TaskControlBlock {
     pub status: TaskStatus,
-    pub stat: TaskStat,
-    pub cx: TaskContext,
+    cx: TaskContext,
 }
 
 pub struct TaskManager {
@@ -78,6 +110,7 @@ pub struct TaskManager {
     num_app: usize,
     current_task: usize,
     tcbs: [TaskControlBlock; MAX_TASK_NUM],
+    stats: [TaskStat; MAX_TASK_NUM],
 }
 
 impl TaskManager {
@@ -91,28 +124,32 @@ impl TaskManager {
         };
 
         let mut tcbs: [TaskControlBlock; MAX_TASK_NUM] = Default::default();
+        let stats: [TaskStat; MAX_TASK_NUM] = Default::default();
 
         tcbs.iter_mut()
             .enumerate()
+            .take(num_app)
             .for_each(|(i, tcb)| {
-                if i < num_app {
-                    tcb.status = TaskStatus::Running;
-                    tcb.cx.sp = KERNEL_STACK[i].get_sp() as usize;
-                    tcb.cx.ra = start_task as usize;
-                } else {
-                    tcb.status = TaskStatus::Exited;
-                }
+                tcb.cx.sp = KERNEL_STACK[i].get_sp() as usize;
+                tcb.cx.ra = start_task as usize;
             });
 
-        Self {
+        let mut task_mgr = Self {
             app_starts,
             num_app,
             current_task: 0,
             tcbs,
+            stats,
+        };
+
+        for i in 0..num_app {
+            task_mgr.load_task(i);
         }
+
+        task_mgr
     }
 
-    pub unsafe fn load_task(&self, task_id: usize) {
+    pub unsafe fn load_task(&mut self, task_id: usize) {
         let task_start = self.app_starts[task_id];
         let task_end = self.app_starts[task_id + 1];
         let task_size = task_end.saturating_sub(task_start);
@@ -122,12 +159,35 @@ impl TaskManager {
         core::ptr::copy_nonoverlapping(task_start as *const u8, load_to, task_size);
 
         asm!("fence.i");
+        self.tcbs[task_id].status = TaskStatus::Ready;
+    }
+
+    /// Return current task cx and next task cx
+    pub unsafe fn move_to_next_task(&mut self, next_task: usize) -> (*mut TaskContext, *mut TaskContext) {
+        let current_task = self.current_task;
+
+        let current_tcb = &mut self.tcbs[current_task];
+        let current_task_cx = &mut current_tcb.cx as *mut TaskContext;
+        if current_tcb.status == TaskStatus::Running {
+            current_tcb.status = TaskStatus::Ready;
+        }
+        self.stats[current_task].record_schedule_end();
+
+        let next_tcb = &mut self.tcbs[next_task];
+        let next_task_cx = &mut next_tcb.cx as *mut TaskContext;
+        assert!(next_tcb.status == TaskStatus::Ready);
+        next_tcb.status = TaskStatus::Running;
+        self.stats[next_task].record_schedule_begin();
+
+        self.current_task = next_task;
+
+        (current_task_cx, next_task_cx)
     }
 
     pub fn find_next_task(&self) -> Option<usize> {
         let mut idx = (self.current_task + 1) % self.num_app;
         for _ in 0..self.num_app {
-            if self.tcbs[idx].status == TaskStatus::Running {
+            if self.tcbs[idx].status == TaskStatus::Ready {
                 return Some(idx);
             }
             idx = (idx + 1) % self.num_app;
@@ -136,18 +196,43 @@ impl TaskManager {
     }
 
     pub fn find_next_task_or_exit(&self) -> usize {
-        self.find_next_task().unwrap_or_else(|| {
-            println!("[kernel] All apps have completed.");
-            sbi::shutdown();
-        })
+        self.find_next_task().unwrap_or_else(|| finish())
     }
+
+    pub fn current_task(&self) -> usize {
+        self.current_task
+    }
+
+    pub fn current_stat(&self) -> &TaskStat {
+        &self.stats[self.current_task]
+    }
+
+    pub fn current_tcb(&self) -> &TaskControlBlock {
+        &self.tcbs[self.current_task]
+    }
+
+    // pub fn current_stat(&mut self) -> &mut TaskStat {
+    //     &mut self.stats[self.current_task]
+    // }
+
+    // pub fn current_tcb(&mut self) -> &mut TaskControlBlock {
+    //     &mut self.tcbs[self.current_task]
+    // }
+
+    // pub fn mut_current_stat(&mut self) -> &mut TaskStat {
+    //     &mut self.stats[self.current_task]
+    // }
+
+    // pub fn mut_current_tcb(&mut self) -> &mut TaskControlBlock {
+    //     &mut self.tcbs[self.current_task]
+    // }
 }
 
 pub unsafe extern "C" fn start_task() {
     // println!("start task");
     let task_mgr = TASK_MANAGER.lock();
+
     let current_task = task_mgr.current_task;
-    task_mgr.load_task(current_task);
     let task_entry = get_task_base(current_task);
     drop(task_mgr);
 
@@ -174,30 +259,21 @@ pub fn exit_and_run_next() {
 
 pub fn run_first_task() {
     let mut task_mgr = TASK_MANAGER.lock();
-    let first_task = 0;
 
-    task_mgr.current_task = first_task;
-    let first_task_cx = &mut task_mgr.tcbs[first_task].cx as *mut TaskContext;
+    let first_task = if task_mgr.num_app > 0 { 0 } else { finish() };
+    let (_, first_task_cx) = unsafe { task_mgr.move_to_next_task(first_task) };
 
     drop(task_mgr);
-    let mut _unused = TaskContext::default();
+    let mut unused = TaskContext::default();
     unsafe {
-        __switch(&mut _unused, first_task_cx);
+        __switch(&mut unused, first_task_cx);
     }
 }
 
 pub fn run_next_task() {
     let mut task_mgr = TASK_MANAGER.lock();
-
-    let current_task = task_mgr.current_task;
-    let current_tcb = &mut task_mgr.tcbs[current_task];
-    let current_task_cx = &mut current_tcb.cx as *mut TaskContext;
-
     let next_task = task_mgr.find_next_task_or_exit();
-    let next_tcb = &mut task_mgr.tcbs[next_task];
-    let next_task_cx = &mut next_tcb.cx as *mut TaskContext;
-
-    task_mgr.current_task = next_task;
+    let (current_task_cx, next_task_cx) = unsafe { task_mgr.move_to_next_task(next_task) };
 
     drop(task_mgr);
     unsafe {
@@ -211,9 +287,20 @@ fn get_task_base(task_id: usize) -> *mut u8 {
     }
 }
 
+fn finish() -> ! {
+    println!("[kernel] All apps have completed.");
+    sbi::shutdown();
+}
+
 pub fn set_next_trigger() {
     const TICKS_PER_SEC: usize = 100;
-    let current_time = timer::get_time();
-    let delta = timer::CLOCK_FREQ / TICKS_PER_SEC;
+    let current_time = time::get_time();
+    let delta = time::CLOCK_FREQ / TICKS_PER_SEC;
     sbi::set_timer(current_time + delta);
+}
+
+pub fn record_syscall(syscall: usize) {
+    let mut task_mgr = TASK_MANAGER.lock();
+    let curent_task = task_mgr.current_task;
+    task_mgr.stats[curent_task].record_syscall(syscall);
 }
