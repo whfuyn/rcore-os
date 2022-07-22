@@ -61,10 +61,13 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
             0
         }
         SYSCALL_GET_TIME => {
-            let us = time::get_time_us();
+            let t = time::get_time();
             let time_val = unsafe { &mut *(args[0] as *mut TimeVal)};
-            time_val.sec = us / 1_000_000;
-            time_val.usec = us % 1_000_000;
+            time_val.sec = t / time::CLOCKS_PER_SEC;
+            // This funny formula is to work around percision issue of the CLOCKS_PER_MICRO_SEC,
+            // which should be 12.5 instead of 12.
+            time_val.usec = t % time::CLOCKS_PER_SEC / time::CLOCKS_PER_MILLI_SEC * 1000;
+
             0
         }
         SYSCALL_TASK_INFO => {
@@ -76,7 +79,7 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
 
             task_info.status = status;
             task_info.syscall_times = stat.syscall_times;
-            task_info.time = stat.time;
+            task_info.time = stat.real_time() / time::CLOCKS_PER_MILLI_SEC;
             0
         }
         unknown => panic!("unknown syscall `{}`", unknown),

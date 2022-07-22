@@ -1,35 +1,13 @@
-const MAX_SYSCALL_NUM: usize = 500;
+use crate::*;
 
-const SYSCALL_EXIT: usize = 93;
-const SYSCALL_WRITE: usize = 64;
-const SYSCALL_YIELD: usize = 124;
-const SYSCALL_GET_TIME: usize = 169;
-const SYSCALL_TASK_INFO: usize = 410;
+pub const MAX_SYSCALL_NUM: usize = 500;
 
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum TaskStatus {
-    #[default]
-    UnInit = 0,
-    Ready = 1,
-    Running = 2,
-    Exited = 3,
-}
-
-#[repr(C)]
-#[derive(Debug)]
-pub struct TaskInfo {
-    status: TaskStatus,
-    syscall_times: [u32; MAX_SYSCALL_NUM],
-    time: usize
-}
-
-#[repr(C)]
-#[derive(Debug)]
-pub struct TimeVal {
-    pub sec: usize,
-    pub usec: usize,
-}
+pub const SYSCALL_EXIT: usize = 93;
+pub const SYSCALL_WRITE: usize = 64;
+pub const SYSCALL_YIELD: usize = 124;
+pub const SYSCALL_GET_TIME: usize = 169;
+pub const SYSCALL_GETTIMEOFDAY: usize = SYSCALL_GET_TIME;
+pub const SYSCALL_TASK_INFO: usize = 410;
 
 pub fn syscall(id: usize, args: [usize; 3]) -> isize {
     let mut ret;

@@ -13,7 +13,6 @@ pub mod trap;
 pub mod task;
 pub mod time;
 
-use task::set_next_trigger;
 use core::arch::global_asm;
 
 global_asm!(include_str!("entry.S"));
@@ -35,5 +34,4 @@ pub fn init() {
         riscv::register::sstatus::clear_sie();
         riscv::register::sie::set_stimer();
     }
-    set_next_trigger();
 }

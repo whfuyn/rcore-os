@@ -41,12 +41,6 @@ lazy_static! {
     pub static ref TASK_MANAGER: Mutex<TaskManager> = Mutex::new(unsafe { TaskManager::new() });
 }
 
-pub struct TaskInfo {
-    status: TaskStatus,
-    syscall_times: [u32; MAX_SYSCALL_NUM],
-    time: usize
-}
-
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum TaskStatus {
@@ -68,31 +62,46 @@ pub struct TaskContext {
 
 #[derive(Debug, Clone)]
 pub struct TaskStat {
-    pub time: usize,
+    pub cpu_clocks: usize,
+    pub first_scheduled: Option<usize>,
     pub last_scheduled: Option<usize>,
     pub syscall_times: [u32; MAX_SYSCALL_NUM],
 }
 
 impl TaskStat {
     pub fn record_schedule_begin(&mut self) {
-        self.last_scheduled = Some(time::get_time());
+        if self.last_scheduled.is_none() {
+            self.first_scheduled = Some(time::get_time());
+            self.last_scheduled = self.first_scheduled;
+        } else {
+            self.last_scheduled = Some(time::get_time());
+        }
     }
 
     pub fn record_schedule_end(&mut self) {
         if let Some(last_scheduled) = self.last_scheduled {
-            self.time = time::get_time().checked_sub(last_scheduled).expect("time goes backward");
+            self.cpu_clocks += time::get_time().checked_sub(last_scheduled).expect("time goes backward");
         }
     }
 
     pub fn record_syscall(&mut self, syscall: usize) {
         self.syscall_times[syscall] += 1;
     }
+
+    pub fn real_time(&self) -> usize {
+        if let Some(first_scheduled) = self.first_scheduled {
+            time::get_time().checked_sub(first_scheduled).expect("time goes backward")
+        } else {
+            0
+        }
+    }
 }
 
 impl Default for TaskStat {
     fn default() -> Self {
         Self {
-            time: 0, 
+            cpu_clocks: 0, 
+            first_scheduled: None,
             last_scheduled: None,
             syscall_times: [0; MAX_SYSCALL_NUM],
         }
@@ -192,6 +201,9 @@ impl TaskManager {
             }
             idx = (idx + 1) % self.num_app;
         }
+        if self.tcbs[self.current_task].status == TaskStatus::Running {
+            return Some(self.current_task);
+        }
         None
     }
 
@@ -264,6 +276,8 @@ pub fn run_first_task() {
     let (_, first_task_cx) = unsafe { task_mgr.move_to_next_task(first_task) };
 
     drop(task_mgr);
+
+    set_next_trigger();
     let mut unused = TaskContext::default();
     unsafe {
         __switch(&mut unused, first_task_cx);
@@ -274,8 +288,9 @@ pub fn run_next_task() {
     let mut task_mgr = TASK_MANAGER.lock();
     let next_task = task_mgr.find_next_task_or_exit();
     let (current_task_cx, next_task_cx) = unsafe { task_mgr.move_to_next_task(next_task) };
-
     drop(task_mgr);
+
+    set_next_trigger();
     unsafe {
         __switch(current_task_cx, next_task_cx);
     }
