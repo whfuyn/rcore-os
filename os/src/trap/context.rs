@@ -15,6 +15,7 @@ impl TrapContext {
     pub fn app_init_context(entry: usize, sp: usize) -> Self {
         let mut sstatus = sstatus::read();
         sstatus.set_spp(SPP::User);
+        sstatus.set_spie(true);
 
         let mut cx = Self {
             x: [0; 32],

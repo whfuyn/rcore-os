@@ -1,5 +1,3 @@
-.PHONY: build run clean debug gdb
-
 OS := os
 OS_OUT_DIR := $(OS)/target/riscv64gc-unknown-none-elf/release
 
@@ -56,3 +54,5 @@ clean-all:
 	@cd $(RUSTSBI_QEMU) && cargo clean
 	@cd os && cargo clean && rm -f src/link_app.S
 	@cd user-lib && cargo clean && rm -f src/linker.ld
+
+.PHONY: build run clean debug gdb $(RUSTSBI_QEMU).bin

@@ -32,7 +32,8 @@ pub fn init() {
     trap::init();
 
     unsafe {
-        // riscv::register::sstatus::set_sie();
+        // Avoid timer interrupt during the init.
+        riscv::register::sstatus::clear_sie();
         riscv::register::sie::set_stimer();
     }
     set_next_trigger();
