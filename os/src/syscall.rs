@@ -1,16 +1,19 @@
 use crate::print;
 use crate::task::run_next_task;
-use crate::task::exit_task_and_run_next;
+use crate::task::exit_and_run_next;
 
 const STDOUT: usize = 1;
 const SYSCALL_EXIT: usize = 93;
 const SYSCALL_WRITE: usize = 64;
 const SYSCALL_YIELD: usize = 124;
+const SYSCALL_GET_TIME: usize = 169;
+const SYSCALL_TASK_INFO: usize = 410;
+
 
 pub fn syscall(id: usize, args: [usize; 3]) -> isize {
     match id {
         SYSCALL_EXIT => {
-            exit_task_and_run_next();
+            exit_and_run_next();
             0
         }
         SYSCALL_WRITE => {
@@ -32,6 +35,13 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
         SYSCALL_YIELD => {
             // crate::println!("\nyield..");
             run_next_task();
+            0
+        }
+        SYSCALL_GET_TIME => {
+            0
+        }
+
+        SYSCALL_TASK_INFO => {
             0
         }
         unknown => panic!("unknown syscall `{}`", unknown),

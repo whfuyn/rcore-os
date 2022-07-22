@@ -1,7 +1,7 @@
 mod context;
 
 use crate::task::{
-    run_next_task, exit_task_and_run_next, set_next_trigger,
+    run_next_task, exit_and_run_next, set_next_trigger,
 };
 use crate::println;
 use crate::syscall::syscall;
@@ -43,11 +43,11 @@ pub extern "C" fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
         }
         Trap::Exception(Exception::StoreFault | Exception::StorePageFault) => {
             println!("[kernel] PageFault in application, kernel killed it.");
-            exit_task_and_run_next();
+            exit_and_run_next();
         }
         Trap::Exception(Exception::IllegalInstruction) => {
             println!("[kernel] IllegalInstruction in application, kernel killed it.");
-            exit_task_and_run_next();
+            exit_and_run_next();
         }
         unknown => {
             panic!("Unsupported trap {:?}, stval = {:#x}!", unknown, stval);

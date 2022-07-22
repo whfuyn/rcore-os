@@ -11,5 +11,5 @@ pub fn rust_main() {
     // task_mgr.print_app_info();
     // drop(app_mgr);
     // println!("Running apps..");
-    task::start();
+    task::run_first_task();
 }

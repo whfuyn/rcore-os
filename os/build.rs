@@ -94,7 +94,7 @@ fn main() {
 fn build_link_app_asm(bins: Vec<String>, stripped_bin_paths: Vec<String>) -> String {
     // Build start and end addr for each app.
     let mut link_app_asm = format!(
-        "    .p2align 3
+"    .p2align 3
     .section .data
     .global _app_info_table
 _app_info_table:
@@ -105,14 +105,14 @@ _app_info_table:
 
     for i in 0..bins.len() {
         let start_entry = format!(
-            "
+"
     .quad app_{i}_start\
 "
         );
         link_app_asm.push_str(&start_entry);
         if i + 1 == bins.len() {
             let end_entry = format!(
-                "
+"
     .quad app_{i}_end
 ",
             );
@@ -122,7 +122,7 @@ _app_info_table:
 
     for (i, stripped_bin_path) in stripped_bin_paths.iter().enumerate() {
         let entry = format!(
-            "
+"
     .section .data
     .global app_{i}_start
     .global app_{i}_end

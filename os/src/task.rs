@@ -1,20 +1,18 @@
+mod stack;
+
 use lazy_static::lazy_static;
-use core::cell::SyncUnsafeCell;
+use core::arch::global_asm;
+use core::arch::asm;
+use spin::Mutex;
+
+use stack::{ KernelStack, UserStack };
 use crate::trap::TrapContext;
 use crate::sbi;
 use crate::println;
 use crate::trap::__restore;
 use crate::timer;
-use core::arch::global_asm;
-use core::arch::asm;
-
-use spin::Mutex;
-
 
 const MAX_TASK_NUM: usize = 32;
-
-const KERNEL_STACK_SIZE: usize = 4096 * 2;
-const USER_STACK_SIZE: usize = 4096 * 2;
 
 const APP_BASE_ADDR: *mut u8 = 0x80400000 as *mut u8;
 const MAX_APP_SIZE: usize = 0x20000;
@@ -29,61 +27,25 @@ extern "C" {
     fn __switch(current_cx: *mut TaskContext, next_cx: *mut TaskContext);
 }
 
-#[repr(align(4096))]
-pub struct KernelStack(SyncUnsafeCell<[u8; KERNEL_STACK_SIZE]>);
-
-#[repr(align(4096))]
-pub struct UserStack(SyncUnsafeCell<[u8; USER_STACK_SIZE]>);
-
 static KERNEL_STACK: [KernelStack ; MAX_TASK_NUM]= {
-    const KERNEL_STACK: KernelStack = KernelStack(SyncUnsafeCell::new([0; KERNEL_STACK_SIZE]));
+    const KERNEL_STACK: KernelStack = KernelStack::new();
     [KERNEL_STACK; MAX_TASK_NUM]
 };
 static USER_STACK: [UserStack; MAX_TASK_NUM] = {
-    const USER_STACK: UserStack = UserStack(SyncUnsafeCell::new([0; USER_STACK_SIZE]));
+    const USER_STACK: UserStack = UserStack::new();
     [USER_STACK; MAX_TASK_NUM]
 };
-
-impl KernelStack {
-    pub fn get_sp(&self) -> usize {
-        unsafe {
-            let stack = self.0.get();
-            let len = (*stack).len() as isize;
-            (stack as *mut u8).offset(len) as usize
-        }
-    }
-
-    pub fn push_context(&self, cx: TrapContext) -> usize {
-        unsafe {
-            let sp = (self.get_sp() as *mut u8)
-                .offset(-(core::mem::size_of::<TrapContext>() as isize));
-            (sp as *mut TrapContext).write(cx);
-            sp as usize
-        }
-    }
-}
-
-impl UserStack {
-    pub fn get_sp(&self) -> *mut u8 {
-        unsafe {
-            let stack = self.0.get();
-            let len = (*stack).len() as isize;
-            (stack as *mut u8).offset(len)
-        }
-    }
-}
 
 lazy_static! {
     pub static ref TASK_MANAGER: Mutex<TaskManager> = Mutex::new(unsafe { TaskManager::new() });
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum TaskStatus {
     #[default]
     Running,
     Exited,
 }
-
 
 #[derive(Debug, Clone, Default)]
 #[repr(C)]
@@ -93,9 +55,21 @@ pub struct TaskContext {
     s0_11: [usize; 12],
 }
 
+#[derive(Debug, Clone)]
+pub struct TaskStat {
+    syscall: [usize; 512],
+}
+
+impl Default for TaskStat {
+    fn default() -> Self {
+        Self { syscall: [0; 512] }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct TaskControlBlock {
     pub status: TaskStatus,
+    pub stat: TaskStat,
     pub cx: TaskContext,
 }
 
@@ -187,7 +161,7 @@ pub unsafe extern "C" fn start_task() {
     );
 }
 
-pub fn exit_task_and_run_next() {
+pub fn exit_and_run_next() {
     let mut task_mgr = TASK_MANAGER.lock();
 
     let current_task = task_mgr.current_task;
@@ -198,7 +172,7 @@ pub fn exit_task_and_run_next() {
     run_next_task();
 }
 
-pub fn start() {
+pub fn run_first_task() {
     let mut task_mgr = TASK_MANAGER.lock();
     let first_task = 0;
 
@@ -239,7 +213,7 @@ fn get_task_base(task_id: usize) -> *mut u8 {
 
 pub fn set_next_trigger() {
     const TICKS_PER_SEC: usize = 100;
-    let current_time = timer::get_current_time();
+    let current_time = timer::get_time();
     let delta = timer::CLOCK_FREQ / TICKS_PER_SEC;
     sbi::set_timer(current_time + delta);
 }
