@@ -10,6 +10,7 @@ lazy_static = { version = "1", features = ["spin_no_std"] }
 # riscv crate.
 # riscv = "0.8"
 riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
+bitflags = "1"
 
 
 [build-dependencies]

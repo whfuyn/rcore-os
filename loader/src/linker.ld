@@ -1,5 +1,5 @@
 OUTPUT_ARCH(riscv)
-ENTRY(_start)
+ENTRY(_loader_start)
 BASE_ADDRESS = 0x80200000;
 
 SECTIONS
@@ -7,46 +7,38 @@ SECTIONS
     . = BASE_ADDRESS;
     sloader = .;
 
-    stext = .;
+    sloader_text = .;
     .text : {
-        /* loader entrypoint */
         *(.text.entry)
         *(.text .text.*)
-
-        /* kernel binary */
-        . = ALIGN(1024M);
-        skernel = .;
-        *(.kernel)
-        . = ALIGN(1024M);
-        ekernel = .;
     }
+    . = ALIGN(4K);
+    eloader_text = .;
 
-    etext = .;
-    srodata = .;
+    sloader_rodata = .;
     .rodata : {
         *(.rodata .rodata.*)
         *(.srodata .srodata.*)
     }
-
     . = ALIGN(4K);
-    erodata = .;
+    eloader_rodata = .;
 
-    sdata = .;
+    sloader_data = .;
     .data : {
         *(.data .data.*)
         *(.sdata .sdata.*)
     }
     . = ALIGN(4K);
-    edata = .;
+    eloader_data = .;
 
     .bss : {
         *(.bss.stack)
-        sbss = .;
+        sloader_bss = .;
         *(.bss .bss.*)
         *(.sbss .sbss.*)
     }
     . = ALIGN(4K);
-    ebss = .;
+    eloader_bss = .;
     
     eloader = .;
 
