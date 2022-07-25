@@ -27,6 +27,7 @@ pub fn init() {
 
 #[no_mangle]
 pub fn rust_main() {
+    println!("hello");
     init();
     task::run_first_task();
 }
