@@ -14,6 +14,8 @@ const KERNEL_BASE_ADDRESS: VirtAddr = unsafe {
     VirtAddr::new_unchecked(0xffffffffc0000000)
 };
 
+const QEMU_MEMORY_START: usize = 0x80000000;
+
 extern "C" {
     fn spacked_kernel();
     fn epacked_kernel();
@@ -23,7 +25,6 @@ extern "C" {
 
 static mut KERNEL_ROOT_PAGE_TABLE: PageTable = PageTable::empty();
 static mut KERNEL_SUB_PAGE_TABLE: PageTable = PageTable::empty();
-static mut LOADER_SUB_PAGE_TABLE: PageTable = PageTable::empty();
 
 #[no_mangle]
 fn loader_main() {
@@ -31,53 +32,54 @@ fn loader_main() {
     println!("loader: 0x{:x} - 0x{:x}", sloader as usize, eloader as usize);
     println!("kernel: 0x{:x} - 0x{:x}", spacked_kernel as usize, epacked_kernel as usize);
 
-    // let sloader_pa = PhysAddr::new(sloader as usize);
-    // let eloader_pa = PhysAddr::new(eloader as usize);
-
-    // Build identity mapping for loader. We assume the kernel won't be too big (e.g. > 1G).
-    let loader_va = VirtAddr::new(sloader as usize);
-    let loader_pa = PhysAddr::new(sloader as usize);
-    let loader_size = (eloader as usize).checked_sub(sloader as usize).expect("invalid eloader");
-    build_sub_page_mapping(
-        unsafe { &mut LOADER_SUB_PAGE_TABLE },
-        loader_va, 
-        loader_pa,
-        loader_size,
-        PteFlags::VALID | PteFlags::READ | PteFlags::WRITE | PteFlags::EXECUTE,
+    // Build identity mapping for physical memory using 1GiB huge page.
+    let memory_va = VirtAddr::new(QEMU_MEMORY_START);
+    let memory_pa = PhysAddr::new(QEMU_MEMORY_START);
+    let mut memory_ppn = memory_pa.ppn();
+    memory_ppn.set_level(0, 0);
+    memory_ppn.set_level(1, 0);
+    let memory_pte = PageTableEntry::leaf(
+        memory_ppn, 
+        PteFlags::kernel_leaf()
     );
+
     unsafe {
-        let loader_vpn = VirtAddr::new(sloader as usize).vpn();
-        let sub_table_ppn = LOADER_SUB_PAGE_TABLE.pa().ppn();
-        let pte = PageTableEntry::parent(sub_table_ppn, PteFlags::VALID);
-        KERNEL_ROOT_PAGE_TABLE.set_entry(loader_vpn.level(2), pte);
+        KERNEL_ROOT_PAGE_TABLE.set_entry(memory_va.vpn().level(2), memory_pte);
     }
 
     let kernel_pa = PhysAddr::new(spacked_kernel as usize);
     let kernel_size = (epacked_kernel as usize).checked_sub(spacked_kernel as usize)
-        .expect("invalid epacked_kernel");
+        .expect("invalid epacked_kernel")
+        // This is for .bss which isn't included in spacked_kernel..epacked_kernel.
+        + 6 * 1024 * 1024;
     build_sub_page_mapping(
         unsafe { &mut KERNEL_SUB_PAGE_TABLE },
         KERNEL_BASE_ADDRESS,
         kernel_pa,
-        // + bss for kernel
-        kernel_size + 6 * 1024 * 1024,
-        PteFlags::VALID
-            | PteFlags::READ | PteFlags::WRITE | PteFlags::EXECUTE
-            | PteFlags::GLOBAL | PteFlags::DIRTY | PteFlags::ACCESS,
+        kernel_size,
+        PteFlags::kernel_leaf()
     );
     unsafe {
         let kernel_vpn = KERNEL_BASE_ADDRESS.vpn();
         let sub_table_ppn = KERNEL_SUB_PAGE_TABLE.pa().ppn();
-        let pte = PageTableEntry::parent(sub_table_ppn, PteFlags::VALID | PteFlags::GLOBAL);
+        let pte = PageTableEntry::parent(sub_table_ppn, PteFlags::kernel_inner());
         KERNEL_ROOT_PAGE_TABLE.set_entry(kernel_vpn.level(2), pte);
     }
 
     unsafe {
         satp::set(Mode::Sv39, 0, KERNEL_ROOT_PAGE_TABLE.pa().ppn().as_usize());
+        // Is it necessary?
         riscv::asm::sfence_vma_all();
+        // Jump to kernel.
         asm!(
+            // This line below will cause lld error undefined symbol `s5`, why?
+            // "j {}",
+            "mv a0, {}",
+            "mv a1, {}",
             "mv ra, {}",
             "ret",
+            in(reg) kernel_pa.0,
+            in(reg) kernel_size,
             in(reg) KERNEL_BASE_ADDRESS.0
         );
     }

@@ -3,6 +3,7 @@
 #![feature(format_args_nl)]
 
 use os::*;
+use mm::*;
 
 core::arch::global_asm!(include_str!("entry.S"));
 extern "C" {
@@ -25,9 +26,19 @@ pub fn init() {
     }
 }
 
+// #[no_mangle]
+// pub fn rust_main() {
+//     println!("hello");
+//     init();
+//     task::run_first_task();
+// }
+
+
+
 #[no_mangle]
-pub fn rust_main() {
-    println!("hello");
+pub extern "C" fn rust_main(kernel_pa: PhysAddr, kernel_size: usize) {
     init();
-    task::run_first_task();
+    println!("hello from os");
+    println!("kernel pa: 0x{:x} 0x{:x}", kernel_pa.0, kernel_size);
+    sbi::shutdown();
 }

@@ -1,13 +1,10 @@
 mod page_table;
 mod frame_allocator;
+mod heap;
 
 use crate::utils::BitField;
 pub use page_table::*;
 
-
-pub struct PhysicalPageManager {
-
-}
 
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
@@ -25,6 +22,7 @@ impl PhysAddr {
     pub fn offset(self) -> usize {
         self.0.get_bits(..12)
     }
+
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -86,6 +84,11 @@ impl PPN {
     pub fn as_page_table(self) -> *mut PageTable {
         (self.0 << 12) as *mut PageTable
     }
+
+    pub fn as_pa(self) -> PhysAddr {
+        PhysAddr(self.0 << 12)
+    }
+
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -114,16 +117,8 @@ impl VPN {
             _ => panic!("invalid vpn level"),
         }
     }
+
+    pub fn as_va(self) -> VirtAddr {
+        VirtAddr(self.0 << 12)
+    }
 }
-
-// impl From<PPN> for usize {
-//     fn from(ppn: PPN) -> Self {
-//         ppn.0
-//     }
-// }
-
-// impl From<VPN> for usize {
-//     fn from(vpn: VPN) -> Self {
-//         vpn.0
-//     }
-// }
