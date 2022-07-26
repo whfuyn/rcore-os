@@ -41,40 +41,55 @@ impl PageTable {
         None
     }
 
-    pub fn build_mapping(&mut self, vpn: VPN, ppn: PPN, flags: [PteFlags; 3]) {
-        let sub_page_table = {
-            let index = vpn.level(1);
-            if self.0[index].is_valid() {
-
-            }
-
-        };
-        
-
+    pub fn clear(&mut self) {
+        *self = Self::empty();
     }
 
-    pub fn build_mapping_(&mut self, vpn: VPN, ppn: PPN, flags: [PteFlags; 3]) {
-        let mut page_table = self;
-        // Check level 2 page
-        let index = vpn.level(2);
-        let pte = page_table.0[index];
-        if pte.is_valid() {
-            page_table = unsafe { &mut *pte.ppn().as_page_table() };
-        }
-
-        for i in (0..=2).rev() {
-            let index = vpn.level(i);
-            let pte = page_table.0[index];
-            if pte.is_valid() {
-                page_table = unsafe { &mut *pte.ppn().as_page_table() };
+    pub fn build_mapping(&mut self, vpn: VPN, ppn: PPN, flags_at_level: [PteFlags; 3]) {
+        let root_pte = {
+            let index = vpn.level(2);
+            if self.0[index].is_valid() {
+                self.0[index]
             } else {
-                let new_frame = frame_alloc();
-                let new_pte = PageTableEntry::new(new_frame, flags[i]);
-                // page_table.0[index]
-
+                let frame = frame_alloc();
+                unsafe {
+                    (*frame.as_page_table()).clear();
+                }
+                PageTableEntry::inner(frame, flags_at_level[2])
             }
-        }
+        };
 
+        let sub_table = unsafe { &mut *root_pte.as_page_table() };
+        let sub_pte = {
+            let index = vpn.level(1);
+            if sub_table.0[index].is_valid() {
+                sub_table.0[index]
+            } else {
+                let frame = frame_alloc();
+                unsafe {
+                    (*frame.as_page_table()).clear();
+                }
+                PageTableEntry::inner(frame, flags_at_level[1])
+            }
+        };
+
+        let leaf_table = unsafe { &mut *sub_pte.as_page_table() };
+        let leaf_pte = PageTableEntry::leaf(ppn, flags_at_level[0]);
+        unsafe {
+            // Set entries in reverse order to avoid accessing uninit entries.
+            leaf_table.set_entry(vpn.level(0), leaf_pte);
+            sub_table.set_entry(vpn.level(1), sub_pte);
+            self.set_entry(vpn.level(2), root_pte);
+        }
+    }
+
+    fn build_kernel_mapping(&mut self, vpn: VPN, ppn: PPN) {
+        let flags_at_level = [
+            PteFlags::kernel_inner(),
+            PteFlags::kernel_inner(),
+            PteFlags::kernel_leaf(),
+        ];
+        self.build_mapping(vpn, ppn, flags_at_level)
     }
 }
 
@@ -112,17 +127,17 @@ impl PageTableEntry {
         Self::new(ppn, flags)
     }
 
-    pub fn parent(child_ppn: PPN, flags: PteFlags) -> Self {
+    pub fn inner(child_ppn: PPN, flags: PteFlags) -> Self {
         assert!(flags.contains(PteFlags::V));
         assert!(!flags.contains(PteFlags::R | PteFlags::W | PteFlags::X));
         Self::new(child_ppn, flags)
     }
 
-    pub fn is_valid(&self) -> bool {
+    pub fn is_valid(self) -> bool {
         self.0.get_bits(0) == 1
     }
 
-    pub fn is_leaf(&self) -> bool {
+    pub fn is_leaf(self) -> bool {
         self.is_valid() & (self.0.get_bits(1) == 1 || self.0.get_bits(3) == 1)
     }
 
@@ -134,8 +149,12 @@ impl PageTableEntry {
         self.0.set_bits(0..=7, flags.bits());
     }
 
-    pub fn ppn(&self) -> PPN {
+    pub fn ppn(self) -> PPN {
         PPN(self.0.get_bits(10..=53))
+    }
+
+    pub fn as_page_table(self) -> *mut PageTable {
+        self.ppn().as_page_table()
     }
 }
 
@@ -163,6 +182,14 @@ impl PteFlags {
 
     pub fn kernel_inner() -> Self {
         PteFlags::V | PteFlags::G
+    }
+
+    pub fn user_inner() -> Self {
+        PteFlags::V
+    }
+
+    pub fn user_leaf() -> Self {
+        PteFlags::V | PteFlags::R | PteFlags::W | PteFlags::X
     }
 }
 
