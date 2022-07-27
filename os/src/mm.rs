@@ -1,6 +1,6 @@
-mod page_table;
-mod frame_allocator;
-mod heap_allocator;
+pub mod page_table;
+pub mod frame_allocator;
+pub mod heap_allocator;
 pub mod address_space;
 
 use crate::utils::BitField;
@@ -36,12 +36,13 @@ impl PhysAddr {
 pub struct VirtAddr(pub usize);
 
 impl VirtAddr {
+    #[track_caller]
     pub fn new(va: usize) -> Self {
         // bit 39..=63 must equal to bit 38.
         // See privileged spec Sv39.
         match va.get_bits(38) {
             0 => assert_eq!(va.get_bits(39..=63), 0),
-            1 => assert_eq!(va.get_bits(39..=63), (1 << 24) - 1),
+            1 => assert_eq!(va.get_bits(39..=63), (1 << 25) - 1),
             _ => unreachable!()
         }
         Self(va)
@@ -57,10 +58,6 @@ impl VirtAddr {
 
     pub fn offset(self) -> usize {
         self.0.get_bits(..12)
-    }
-
-    pub fn as_va(self) -> VirtAddr {
-        VirtAddr::new(self.0 << 12)
     }
 }
 
@@ -129,6 +126,10 @@ impl VPN {
     }
 
     pub fn as_va(self) -> VirtAddr {
-        VirtAddr(self.0 << 12)
+        let mut va = self.0 << 12;
+        if va.get_bits(38) == 1 {
+            va.set_bits(39..=63, (1 << 25) - 1);
+        }
+        VirtAddr::new(va)
     }
 }

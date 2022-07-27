@@ -6,9 +6,12 @@ edition = "2021"
 [dependencies]
 riscv = "0.8"
 
-# [[bin]]
-# name = "hello-world"
-# path = "src/bin/00hello_world.rs"
+[profile.release]
+debug = true
+
+[[bin]]
+name = "hello-world"
+path = "src/bin/00hello_world.rs"
 
 # [[bin]]
 # name = "store-fault"
@@ -54,6 +57,6 @@ riscv = "0.8"
 # name = "sleep"
 # path = "src/bin/03sleep.rs"
 
-[[bin]]
-name = "test-task-info"
-path = "src/bin/ch3_taskinfo.rs"
+# [[bin]]
+# name = "test-task-info"
+# path = "src/bin/ch3_taskinfo.rs"

@@ -22,10 +22,9 @@ __all_traps:
 
     csrr t0, sstatus
     csrr t1, sepc
+    csrr t2, sscratch
     sd t0, 32*8(sp)
     sd t1, 33*8(sp)
-
-    csrr t2, sscratch
     sd t2, 2*8(sp)
 
     # We pass &mut TrapContext to the handler

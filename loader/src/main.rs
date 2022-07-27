@@ -51,7 +51,7 @@ fn loader_main() {
     let kernel_size = (epacked_kernel as usize).checked_sub(spacked_kernel as usize)
         .expect("invalid epacked_kernel")
         // This is for .bss which isn't included in spacked_kernel..epacked_kernel.
-        + 6 * 1024 * 1024;
+        + 10 * 1024 * 1024;
     build_sub_page_mapping(
         unsafe { &mut KERNEL_SUB_PAGE_TABLE },
         KERNEL_BASE_ADDRESS,
@@ -62,29 +62,40 @@ fn loader_main() {
     unsafe {
         let kernel_vpn = KERNEL_BASE_ADDRESS.vpn();
         let sub_table_ppn = KERNEL_SUB_PAGE_TABLE.pa().ppn();
-        let pte = PageTableEntry::parent(sub_table_ppn, PteFlags::kernel_inner());
+        let pte = PageTableEntry::inner(sub_table_ppn, PteFlags::kernel_inner());
         KERNEL_ROOT_PAGE_TABLE.set_entry(kernel_vpn.level(2), pte);
     }
 
     unsafe {
+        println!("kbpb in loader: 0x{:x}", KERNEL_ROOT_PAGE_TABLE.pa().ppn().as_usize());
         satp::set(Mode::Sv39, 0, KERNEL_ROOT_PAGE_TABLE.pa().ppn().as_usize());
         // Is it necessary?
         riscv::asm::sfence_vma_all();
         // Jump to kernel.
+        // asm!(
+        //     // This line below will cause lld error undefined symbol `s5`, why?
+        //     // "j {}",
+        //     "mv a0, {}",
+        //     "mv a1, {}",
+        //     "mv ra, {}",
+        //     "ret",
+        //     in(reg) kernel_pa.0,
+        //     in(reg) kernel_size,
+        //     in(reg) KERNEL_BASE_ADDRESS.0,
+        //     options(noreturn)
+        // );
         asm!(
-            // This line below will cause lld error undefined symbol `s5`, why?
-            // "j {}",
             "mv a0, {}",
             "mv a1, {}",
-            "mv ra, {}",
-            "ret",
+            "jalr x0, {}",
             in(reg) kernel_pa.0,
             in(reg) kernel_size,
-            in(reg) KERNEL_BASE_ADDRESS.0
+            in(reg) KERNEL_BASE_ADDRESS.0,
+            options(noreturn)
         );
     }
 
-    unreachable!("shouldn't be here");
+    // unreachable!("shouldn't be here");
 
     // sbi::shutdown();
 }

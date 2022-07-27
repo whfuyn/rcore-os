@@ -6,6 +6,7 @@ use core::arch::asm;
 use core::mem::MaybeUninit;
 use spin::Mutex;
 use alloc::vec::Vec;
+use crate::mm::*;
 
 use stack::{ KernelStack, UserStack };
 use crate::trap::TrapContext;
@@ -22,6 +23,8 @@ const MAX_TASK_NUM: usize = 32;
 const APP_BASE_ADDR: *mut u8 = 0x10000 as *mut u8;
 const MAX_APP_SIZE: usize = 0x20000;
 
+const PAGE_SIZE: usize = 4096;
+
 global_asm!(include_str!("link_app.S"));
 extern "C" {
     static _app_info_table: usize;
@@ -29,17 +32,19 @@ extern "C" {
 
 global_asm!(include_str!("task/switch.S"));
 extern "C" {
-    fn __switch(current_cx: *mut TaskContext, next_cx: *mut TaskContext);
+    fn __switch(current_cx: *mut TaskContext, next_cx: *mut TaskContext) -> !;
 }
 
-static KERNEL_STACK: [KernelStack ; MAX_TASK_NUM]= {
-    const KERNEL_STACK: KernelStack = KernelStack::new();
-    [KERNEL_STACK; MAX_TASK_NUM]
-};
-static USER_STACK: [UserStack; MAX_TASK_NUM] = {
-    const USER_STACK: UserStack = UserStack::new();
-    [USER_STACK; MAX_TASK_NUM]
-};
+static mut SPACE: [u8; 4096] = [0; 4096];
+
+// static KERNEL_STACK: [KernelStack ; MAX_TASK_NUM]= {
+//     const KERNEL_STACK: KernelStack = KernelStack::new();
+//     [KERNEL_STACK; MAX_TASK_NUM]
+// };
+// static USER_STACK: [UserStack; MAX_TASK_NUM] = {
+//     const USER_STACK: UserStack = UserStack::new();
+//     [USER_STACK; MAX_TASK_NUM]
+// };
 
 lazy_static! {
     pub static ref TASK_MANAGER: Mutex<TaskManager> = Mutex::new(unsafe { TaskManager::new() });
@@ -61,6 +66,7 @@ pub enum TaskStatus {
 pub struct TaskContext {
     ra: usize,
     sp: usize,
+    satp: usize,
     s0_11: [usize; 12],
 }
 
@@ -123,7 +129,7 @@ pub struct TaskManager {
     num_app: usize,
     current_task: usize,
     tcbs: Vec<TaskControlBlock>,
-    addr_spaces: Vec<AddressSpace>,
+    pub addr_spaces: Vec<AddressSpace>,
     stats: Vec<TaskStat>,
 }
 
@@ -144,20 +150,28 @@ impl TaskManager {
         for i in 0..num_app {
             let mut addr_space = AddressSpace::new(i + 2);
 
-            let (ustack_vpn, ustack_ppn) = addr_space.alloc_page();
-            let ustack = unsafe { &mut *(ustack_ppn.as_pa().0 as *mut KernelStack) };
-            let usp = ustack.get_sp();
+            // TODO: put ustack in lower addr
+            let (ustack_vpn, _) = addr_space.alloc_page();
+            let usp = ustack_vpn.as_va().0 + PAGE_SIZE;
 
             let (kstack_vpn, kstack_ppn) = addr_space.alloc_kernel_page();
-            let kstack = unsafe { &mut *(kstack_ppn.as_pa().0 as *mut KernelStack) };
+            let kstack =  &mut *(kstack_ppn.as_pa().0 as *mut KernelStack);
             let task_init_trap_cx = TrapContext::app_init_context(
                 APP_BASE_ADDR as usize, usp
+                // start_task as usize, &SPACE as *const _ as usize
             );
-            let ksp = kstack.push_context(task_init_trap_cx);
+            kstack.push_context(task_init_trap_cx);
+            let ksp = kstack_vpn.as_va().0 + PAGE_SIZE - core::mem::size_of::<TrapContext>();
+            println!("ksp: 0x{:x}", ksp);
+            // let ksp = &SPACE as *const _ as usize;
 
             let mut tcb = TaskControlBlock::default();
             tcb.cx.sp = ksp;
+            // tcb.cx.sp = ;
             tcb.cx.ra = __restore as usize;
+            // tcb.cx.ra = start_task as usize;
+            tcb.cx.satp = addr_space.satp();
+
 
             tcbs.push(tcb);
             addr_spaces.push(addr_space);
@@ -176,6 +190,9 @@ impl TaskManager {
         for i in 0..num_app {
             task_mgr.load_task(i);
         }
+        unsafe {
+            println!("jump to 0x{:x}", (*task_mgr.addr_spaces[0].page_table.as_page_table()).translate(VirtAddr::new(APP_BASE_ADDR as usize)).unwrap().0);
+        }
 
         task_mgr
     }
@@ -185,11 +202,24 @@ impl TaskManager {
         let task_end = self.app_starts[task_id + 1];
         let task_size = task_end.saturating_sub(task_start);
 
-        let load_to = get_task_base(task_id);
-        println!("task `{task_id}` loaded at `0x{:x}`", load_to as usize);
-        core::ptr::copy_nonoverlapping(task_start as *const u8, load_to, task_size);
+        const PAGE_SIZE: usize = 4096;
+        let mut loaded_size = 0usize;
+        let mut load_to = VirtAddr::new(APP_BASE_ADDR as usize);
 
-        asm!("fence.i");
+        let addr_space = &mut self.addr_spaces[task_id];
+        while loaded_size < task_size {
+            let (_vpn, ppn) = addr_space.alloc_page_at(load_to.vpn());
+            let load_to_pa = ppn.as_pa().0 as *mut u8;
+            // TODO: fix size
+            // core::ptr::copy_nonoverlapping(task_start as *const u8, load_to_pa, PAGE_SIZE);
+            core::ptr::copy((task_start + loaded_size) as *const u8, load_to_pa, PAGE_SIZE);
+            println!("task `{task_id}` loaded at va `0x{:x}` pa `0x{:x}`", load_to.0, ppn.as_pa().0);
+            loaded_size += PAGE_SIZE;
+            load_to.0 += PAGE_SIZE;
+        }
+        // TODO
+        addr_space.alloc_page_at(load_to.vpn());
+
         self.tcbs[task_id].status = TaskStatus::Ready;
     }
 
@@ -263,22 +293,24 @@ impl TaskManager {
 }
 
 pub unsafe extern "C" fn start_task() {
-    // println!("start task");
-    let task_mgr = TASK_MANAGER.lock();
-
-    let current_task = task_mgr.current_task;
-    let task_entry = get_task_base(current_task);
-    drop(task_mgr);
-
-    let mut task_init_trap_cx = TrapContext::app_init_context(
-        task_entry as usize, USER_STACK[current_task].get_sp() as usize
-    );
-
-    // We are already in our kernel stack. Don't need to push context to kernel stack.
-    __restore(
-        &mut task_init_trap_cx as *mut TrapContext as usize
-    );
+    println!("start task");
+    sbi::shutdown();
 }
+//     let task_mgr = TASK_MANAGER.lock();
+
+//     let current_task = task_mgr.current_task;
+//     let task_entry = get_task_base(current_task);
+//     drop(task_mgr);
+
+//     let mut task_init_trap_cx = TrapContext::app_init_context(
+//         task_entry as usize, USER_STACK[current_task].get_sp() as usize
+//     );
+
+//     // We are already in our kernel stack. Don't need to push context to kernel stack.
+//     __restore(
+//         &mut task_init_trap_cx as *mut TrapContext as usize
+//     );
+// }
 
 pub fn exit_and_run_next() {
     let mut task_mgr = TASK_MANAGER.lock();
@@ -292,18 +324,32 @@ pub fn exit_and_run_next() {
 }
 
 pub fn run_first_task() {
+    println!("access task mgr");
     let mut task_mgr = TASK_MANAGER.lock();
+    println!("access task mgr done");
 
     let first_task = if task_mgr.num_app > 0 { 0 } else { finish() };
     let (_, first_task_cx) = unsafe { task_mgr.move_to_next_task(first_task) };
 
     drop(task_mgr);
 
-    set_next_trigger();
+    println!("switch to first.. 1111");
+    println!("debug cx: {:?}", unsafe {&*first_task_cx });
+    // set_next_trigger();
     let mut unused = TaskContext::default();
+    println!("__switch: 0x{:x}", __switch as usize);
+    // println!("start_task: 0x{:x}", start_task as usize);
+    // extern {
+    //     fn what_the_fuck();
+    // }
+    // println!("wtf: 0x{:x}", what_the_fuck as usize);
     unsafe {
         __switch(&mut unused, first_task_cx);
     }
+    unsafe {
+        start_task();
+    }
+    println!("here");
 }
 
 pub fn run_next_task() {
@@ -330,10 +376,10 @@ fn finish() -> ! {
 }
 
 pub fn set_next_trigger() {
-    const TICKS_PER_SEC: usize = 100;
-    let current_time = time::get_time();
-    let delta = time::CLOCK_FREQ / TICKS_PER_SEC;
-    sbi::set_timer(current_time + delta);
+    // const TICKS_PER_SEC: usize = 100;
+    // let current_time = time::get_time();
+    // let delta = time::CLOCK_FREQ / TICKS_PER_SEC;
+    // sbi::set_timer(current_time + delta);
 }
 
 pub fn record_syscall(syscall: usize) {

@@ -43,7 +43,8 @@ SECTIONS
 ";
 
 fn main() {
-    let base_addr = std::env::var("BASE_ADDRESS").unwrap_or("0x80400000".into());
+    // let base_addr = std::env::var("BASE_ADDRESS").unwrap_or("0x80400000".into());
+    let base_addr = "0x10000";
     let linker_script = LINKER_SCRIPT.replace("{BASE_ADDRESS}", &base_addr);
     fs::write("src/linker.ld", linker_script).expect("cannot write linker script");
 }

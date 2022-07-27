@@ -1,4 +1,5 @@
 use crate::print;
+use crate::println;
 use crate::task::run_next_task;
 use crate::task::exit_and_run_next;
 use crate::task::record_syscall;
@@ -47,6 +48,16 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
 
             let buffer_ptr = args[1];
             let buffer_size = args[2];
+            crate::println!("buffer ptr: 0x{:x}", buffer_ptr);
+            crate::println!("buffer size: 0x{:x}", buffer_size);
+            let task_mgr = TASK_MANAGER.lock();
+
+            unsafe {
+                let translated = (*task_mgr.addr_spaces[0].page_table.as_page_table()).translate(crate::mm::VirtAddr::new(buffer_ptr as usize)).unwrap().0;
+                crate::println!("buffer translate 0x{:x}", translated);
+                println!("decoded: {}", *(translated as *const u8));
+
+            }
             let buffer = unsafe { core::slice::from_raw_parts(buffer_ptr as *const u8, args[2]) };
 
             print!(

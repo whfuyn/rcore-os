@@ -3,6 +3,8 @@
 #![feature(format_args_nl)]
 #![feature(sync_unsafe_cell)]
 #![feature(naked_functions)]
+// #![feature(default_alloc_error_handler)]
+#![feature(alloc_error_handler)]
 
 extern crate alloc;
 

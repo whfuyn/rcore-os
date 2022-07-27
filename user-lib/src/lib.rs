@@ -16,6 +16,10 @@ pub const CLOCK_FREQ: usize = 12500000;
 #[link_section = ".text.entry"]
 pub extern "C" fn _start() -> ! {
     clear_bss();
+    // let HELLO: &[u8] = b"hello, world!";
+    // sys_write(1, &[b'h']);
+    // sys_write(1, HELLO);
+    println!("_start");
     let xstate = main();
     syscall::sys_exit(xstate);
 }

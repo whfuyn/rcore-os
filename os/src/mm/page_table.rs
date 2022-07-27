@@ -24,7 +24,7 @@ impl PageTable {
     }
 
     pub fn ppn(&self) -> PPN {
-        PPN(self as *const _ as usize)
+        PPN((self as *const _ as usize) >> 12)
     }
 
     /// This should only be called when self is a root page table.

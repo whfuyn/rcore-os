@@ -9,7 +9,7 @@ pub use context::TrapContext;
 use core::arch::global_asm;
 use riscv::register::{
     scause::{self, Exception, Interrupt, Trap},
-    stval, stvec,
+    stval, stvec, sepc
 };
 
 global_asm!(include_str!("trap/trap.S"));
@@ -26,6 +26,7 @@ pub fn init() {
 
 #[no_mangle]
 pub extern "C" fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
+    println!("into trap handler");
     let scause = scause::read();
     let stval = stval::read();
 
@@ -43,6 +44,7 @@ pub extern "C" fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
         }
         Trap::Exception(Exception::StoreFault | Exception::StorePageFault) => {
             println!("[kernel] PageFault in application, kernel killed it.");
+            println!("[kernel] stval: 0x{:x}, sepc: 0x{:x}", stval, sepc::read());
             exit_and_run_next();
         }
         Trap::Exception(Exception::IllegalInstruction) => {
@@ -50,7 +52,9 @@ pub extern "C" fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
             exit_and_run_next();
         }
         unknown => {
-            panic!("Unsupported trap {:?}, stval = {:#x}!", unknown, stval);
+            println!("[kernel] stval: 0x{:x}, sepc: 0x{:x}", stval, sepc::read());
+            panic!("Unsupported trap {:?}", unknown);
+            // panic!("Unsupported trap {:?}, stval = {:#x}!", unknown, stval);
         }
     }
     cx
