@@ -3,7 +3,9 @@ mod stack;
 use lazy_static::lazy_static;
 use core::arch::global_asm;
 use core::arch::asm;
+use core::mem::MaybeUninit;
 use spin::Mutex;
+use alloc::vec::Vec;
 
 use stack::{ KernelStack, UserStack };
 use crate::trap::TrapContext;
@@ -12,10 +14,12 @@ use crate::println;
 use crate::trap::__restore;
 use crate::time;
 use crate::syscall::MAX_SYSCALL_NUM;
+use crate::mm::address_space::AddressSpace;
 
 const MAX_TASK_NUM: usize = 32;
 
-const APP_BASE_ADDR: *mut u8 = 0x80400000 as *mut u8;
+// const APP_BASE_ADDR: *mut u8 = 0x80400000 as *mut u8;
+const APP_BASE_ADDR: *mut u8 = 0x10000 as *mut u8;
 const MAX_APP_SIZE: usize = 0x20000;
 
 global_asm!(include_str!("link_app.S"));
@@ -118,8 +122,9 @@ pub struct TaskManager {
     app_starts: &'static [usize],
     num_app: usize,
     current_task: usize,
-    tcbs: [TaskControlBlock; MAX_TASK_NUM],
-    stats: [TaskStat; MAX_TASK_NUM],
+    tcbs: Vec<TaskControlBlock>,
+    addr_spaces: Vec<AddressSpace>,
+    stats: Vec<TaskStat>,
 }
 
 impl TaskManager {
@@ -132,22 +137,39 @@ impl TaskManager {
             core::slice::from_raw_parts(table, num_app + 1)
         };
 
-        let mut tcbs: [TaskControlBlock; MAX_TASK_NUM] = Default::default();
-        let stats: [TaskStat; MAX_TASK_NUM] = Default::default();
+        let mut tcbs: Vec<TaskControlBlock> = Vec::new();
+        let mut addr_spaces: Vec<AddressSpace> = Vec::new();
+        let mut stats: Vec<TaskStat> = Vec::new();
 
-        tcbs.iter_mut()
-            .enumerate()
-            .take(num_app)
-            .for_each(|(i, tcb)| {
-                tcb.cx.sp = KERNEL_STACK[i].get_sp() as usize;
-                tcb.cx.ra = start_task as usize;
-            });
+        for i in 0..num_app {
+            let mut addr_space = AddressSpace::new(i + 2);
+
+            let (ustack_vpn, ustack_ppn) = addr_space.alloc_page();
+            let ustack = unsafe { &mut *(ustack_ppn.as_pa().0 as *mut KernelStack) };
+            let usp = ustack.get_sp();
+
+            let (kstack_vpn, kstack_ppn) = addr_space.alloc_kernel_page();
+            let kstack = unsafe { &mut *(kstack_ppn.as_pa().0 as *mut KernelStack) };
+            let task_init_trap_cx = TrapContext::app_init_context(
+                APP_BASE_ADDR as usize, usp
+            );
+            let ksp = kstack.push_context(task_init_trap_cx);
+
+            let mut tcb = TaskControlBlock::default();
+            tcb.cx.sp = ksp;
+            tcb.cx.ra = __restore as usize;
+
+            tcbs.push(tcb);
+            addr_spaces.push(addr_space);
+            stats.push(TaskStat::default());
+        }
 
         let mut task_mgr = Self {
             app_starts,
             num_app,
             current_task: 0,
             tcbs,
+            addr_spaces,
             stats,
         };
 
@@ -296,11 +318,11 @@ pub fn run_next_task() {
     }
 }
 
-fn get_task_base(task_id: usize) -> *mut u8 {
-    unsafe {
-        APP_BASE_ADDR.add(task_id * MAX_APP_SIZE)
-    }
-}
+// fn get_task_base(task_id: usize) -> *mut u8 {
+//     unsafe {
+//         APP_BASE_ADDR.add(task_id * MAX_APP_SIZE)
+//     }
+// }
 
 fn finish() -> ! {
     println!("[kernel] All apps have completed.");

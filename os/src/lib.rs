@@ -4,6 +4,8 @@
 #![feature(sync_unsafe_cell)]
 #![feature(naked_functions)]
 
+extern crate alloc;
+
 pub mod console;
 pub mod lang_items;
 pub mod sbi;

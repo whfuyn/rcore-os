@@ -1,9 +1,15 @@
 mod page_table;
 mod frame_allocator;
-mod heap;
+mod heap_allocator;
+pub mod address_space;
 
 use crate::utils::BitField;
 pub use page_table::*;
+
+pub fn init() {
+    heap_allocator::init();
+    // frame_allocator::init(frame_start, frame_end);
+}
 
 
 #[derive(Debug, Clone, Copy)]
@@ -51,6 +57,10 @@ impl VirtAddr {
 
     pub fn offset(self) -> usize {
         self.0.get_bits(..12)
+    }
+
+    pub fn as_va(self) -> VirtAddr {
+        VirtAddr::new(self.0 << 12)
     }
 }
 

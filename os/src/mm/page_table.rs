@@ -23,6 +23,10 @@ impl PageTable {
         PhysAddr::new(self as *mut _ as usize)
     }
 
+    pub fn ppn(&self) -> PPN {
+        PPN(self as *const _ as usize)
+    }
+
     /// This should only be called when self is a root page table.
     pub fn translate(&self, va: VirtAddr) -> Option<PhysAddr> {
         let vpn = va.vpn();
@@ -83,14 +87,14 @@ impl PageTable {
         }
     }
 
-    fn build_kernel_mapping(&mut self, vpn: VPN, ppn: PPN) {
-        let flags_at_level = [
-            PteFlags::kernel_inner(),
-            PteFlags::kernel_inner(),
-            PteFlags::kernel_leaf(),
-        ];
-        self.build_mapping(vpn, ppn, flags_at_level)
-    }
+    // fn build_kernel_mapping(&mut self, vpn: VPN, ppn: PPN) {
+    //     let flags_at_level = [
+    //         PteFlags::kernel_inner(),
+    //         PteFlags::kernel_inner(),
+    //         PteFlags::kernel_leaf(),
+    //     ];
+    //     self.build_mapping(vpn, ppn, flags_at_level)
+    // }
 }
 
 #[derive(Debug, Clone, Copy)]

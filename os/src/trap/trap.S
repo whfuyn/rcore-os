@@ -34,10 +34,6 @@ __all_traps:
 
     .global __restore
 __restore:
-    # trap_handler returns the kernel sp
-    # This also handles the app init case.
-    mv sp, a0
-
     ld t0, 32*8(sp)
     ld t1, 33*8(sp)
     ld t2, 2*8(sp)

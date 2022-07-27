@@ -5,6 +5,9 @@ pub struct TrapContext {
     pub x: [usize; 32],
     pub sstatus: Sstatus,
     pub sepc: usize,
+    // pub satp: usize,
+    // pub kernel_stack: usize,
+    // pub brk: VirtAddr,
 }
 
 impl TrapContext {

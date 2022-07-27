@@ -4,6 +4,12 @@
 
 use os::*;
 use mm::*;
+use riscv::register::satp;
+
+const KERNEL_BASE_ADDRESS: VirtAddr = unsafe {
+    VirtAddr::new_unchecked(0xffffffffc0000000)
+};
+
 
 core::arch::global_asm!(include_str!("entry.S"));
 extern "C" {
@@ -40,5 +46,12 @@ pub extern "C" fn rust_main(kernel_pa: PhysAddr, kernel_size: usize) {
     init();
     println!("hello from os");
     println!("kernel pa: 0x{:x} 0x{:x}", kernel_pa.0, kernel_size);
+    let kernel_end = VirtAddr::new(KERNEL_BASE_ADDRESS.0 + kernel_size).vpn();
+    let kernel_avail_va = VPN(kernel_end.0 + 1);
+    mm::address_space::init(PPN(satp::read().bits()), kernel_avail_va);
+
+    println!("satp: 0x{:x}", riscv::register::satp::read().bits());
+    task::run_first_task();
+
     sbi::shutdown();
 }
