@@ -35,4 +35,4 @@ __switch:
     csrw satp, t1
     sfence.vma
 
-    jalr x0, ra
+    ret

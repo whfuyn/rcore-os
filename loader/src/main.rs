@@ -68,6 +68,7 @@ fn loader_main() {
 
     unsafe {
         println!("kbpb in loader: 0x{:x}", KERNEL_ROOT_PAGE_TABLE.pa().ppn().as_usize());
+        println!("kspb in loader: 0x{:x}", KERNEL_SUB_PAGE_TABLE.pa().ppn().as_usize());
         satp::set(Mode::Sv39, 0, KERNEL_ROOT_PAGE_TABLE.pa().ppn().as_usize());
         // Is it necessary?
         riscv::asm::sfence_vma_all();
@@ -114,6 +115,8 @@ fn build_sub_page_mapping(
         let mut ppn = p.ppn();
         // Huge page alignment
         ppn.set_level(0, 0);
+
+        println!("mapping vpn 0x{:x} to ppn 0x{:x}", vpn.0, ppn.0);
 
         let leaf_pte = PageTableEntry::leaf(ppn, flags);
         unsafe {

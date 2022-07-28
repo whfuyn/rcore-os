@@ -2,7 +2,8 @@ use crate::mm::*;
 use buddy_system_allocator::LockedHeap;
 use spin::Mutex;
 
-const INIT_HEAP_SPACE_SIZE: usize = 4096 * 16;
+// const INIT_HEAP_SPACE_SIZE: usize = 4096 * 512;
+const INIT_HEAP_SPACE_SIZE: usize = 2 * 1024 * 1024;
 
 #[global_allocator]
 pub static KERNEL_HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::empty();

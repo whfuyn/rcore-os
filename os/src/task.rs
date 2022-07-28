@@ -32,10 +32,9 @@ extern "C" {
 
 global_asm!(include_str!("task/switch.S"));
 extern "C" {
-    fn __switch(current_cx: *mut TaskContext, next_cx: *mut TaskContext) -> !;
+    fn __switch(current_cx: *mut TaskContext, next_cx: *mut TaskContext);
 }
 
-static mut SPACE: [u8; 4096] = [0; 4096];
 
 // static KERNEL_STACK: [KernelStack ; MAX_TASK_NUM]= {
 //     const KERNEL_STACK: KernelStack = KernelStack::new();
@@ -147,6 +146,7 @@ impl TaskManager {
         let mut addr_spaces: Vec<AddressSpace> = Vec::new();
         let mut stats: Vec<TaskStat> = Vec::new();
 
+        // let mut dbg_ksp = 0;
         for i in 0..num_app {
             let mut addr_space = AddressSpace::new(i + 2);
 
@@ -162,6 +162,7 @@ impl TaskManager {
             );
             kstack.push_context(task_init_trap_cx);
             let ksp = kstack_vpn.as_va().0 + PAGE_SIZE - core::mem::size_of::<TrapContext>();
+            // dbg_ksp = ksp;
             println!("ksp: 0x{:x}", ksp);
             // let ksp = &SPACE as *const _ as usize;
 
@@ -177,6 +178,13 @@ impl TaskManager {
             addr_spaces.push(addr_space);
             stats.push(TaskStat::default());
         }
+
+        // println!("asp0 translate to 0x{:x}", addr_spaces[0].page_table.as_page_table().as_ref().unwrap().translate(VirtAddr::new(dbg_ksp)).unwrap().0);
+        // println!("asp1 translate to 0x{:x}", addr_spaces[1].page_table.as_page_table().as_ref().unwrap().translate(VirtAddr::new(dbg_ksp)).unwrap().0);
+
+
+        // println!("tcb[0]: {:p}", &(tcbs[0]));
+        // println!("tcb[1]: {:p}", &(tcbs[1]));
 
         let mut task_mgr = Self {
             app_starts,
@@ -219,6 +227,9 @@ impl TaskManager {
         }
         // TODO
         addr_space.alloc_page_at(load_to.vpn());
+        // addr_space.alloc_page_at(load_to.vpn());
+        // addr_space.alloc_page_at(load_to.vpn());
+        // addr_space.alloc_page_at(load_to.vpn());
 
         self.tcbs[task_id].status = TaskStatus::Ready;
     }
@@ -226,8 +237,15 @@ impl TaskManager {
     /// Return current task cx and next task cx
     pub unsafe fn move_to_next_task(&mut self, next_task: usize) -> (*mut TaskContext, *mut TaskContext) {
         let current_task = self.current_task;
+        // println!("curr task: {}", current_task);
+        // println!("next task: {}", next_task);
+        // let current_tcb = &self.tcbs[current_task];
+        // let next_tcb = &self.tcbs[next_task];
+        // println!("current tcb: {:x}", current_tcb as *const _ as usize);
+        // println!("next tcb: {:x}", next_tcb as *const _ as usize);
 
         let current_tcb = &mut self.tcbs[current_task];
+        // println!("current tcb: {:x}", current_tcb as *const _ as usize);
         let current_task_cx = &mut current_tcb.cx as *mut TaskContext;
         if current_tcb.status == TaskStatus::Running {
             current_tcb.status = TaskStatus::Ready;
@@ -235,12 +253,15 @@ impl TaskManager {
         self.stats[current_task].record_schedule_end();
 
         let next_tcb = &mut self.tcbs[next_task];
+        // println!("next tcb: {:x}", next_tcb as *const _ as usize);
         let next_task_cx = &mut next_tcb.cx as *mut TaskContext;
         assert!(next_tcb.status == TaskStatus::Ready);
         next_tcb.status = TaskStatus::Running;
         self.stats[next_task].record_schedule_begin();
 
         self.current_task = next_task;
+        // println!("current cx {:p}", current_task_cx);
+        // println!("next cx {:p}", next_task_cx);
 
         (current_task_cx, next_task_cx)
     }
@@ -249,11 +270,13 @@ impl TaskManager {
         let mut idx = (self.current_task + 1) % self.num_app;
         for _ in 0..self.num_app {
             if self.tcbs[idx].status == TaskStatus::Ready {
+                // println!("found task {}", idx);
                 return Some(idx);
             }
             idx = (idx + 1) % self.num_app;
         }
         if self.tcbs[self.current_task].status == TaskStatus::Running {
+            // println!("found current {}", idx);
             return Some(self.current_task);
         }
         None
@@ -346,10 +369,6 @@ pub fn run_first_task() {
     unsafe {
         __switch(&mut unused, first_task_cx);
     }
-    unsafe {
-        start_task();
-    }
-    println!("here");
 }
 
 pub fn run_next_task() {
@@ -358,6 +377,12 @@ pub fn run_next_task() {
     let (current_task_cx, next_task_cx) = unsafe { task_mgr.move_to_next_task(next_task) };
     drop(task_mgr);
 
+    // println!("switch to next");
+    // println!("curr sepc: 0x{:x}", unsafe{ (*(((*current_task_cx).sp - 0) as *const TrapContext)).sepc });
+    // println!("next sepc: 0x{:x}", unsafe{ (*(((*next_task_cx).sp - 0) as *const TrapContext)).sepc });
+    // unsafe {
+    //     (*(((*next_task_cx).sp - 0) as *mut TrapContext)).sepc = 0x10000;
+    // }
     set_next_trigger();
     unsafe {
         __switch(current_task_cx, next_task_cx);
@@ -376,10 +401,10 @@ fn finish() -> ! {
 }
 
 pub fn set_next_trigger() {
-    // const TICKS_PER_SEC: usize = 100;
-    // let current_time = time::get_time();
-    // let delta = time::CLOCK_FREQ / TICKS_PER_SEC;
-    // sbi::set_timer(current_time + delta);
+    const TICKS_PER_SEC: usize = 1000;
+    let current_time = time::get_time();
+    let delta = time::CLOCK_FREQ / TICKS_PER_SEC;
+    sbi::set_timer(current_time + delta);
 }
 
 pub fn record_syscall(syscall: usize) {

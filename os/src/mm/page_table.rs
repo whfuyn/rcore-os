@@ -34,6 +34,7 @@ impl PageTable {
         for i in (0..=2).rev() {
             let index = vpn.level(i);
             let pte = page_table[index];
+            // crate::println!("transalte ppn: 0x{:x}", pte.ppn().0);
             if pte.is_leaf() {
                 return Some(PhysAddr::new(pte.ppn().as_usize() << 12 | va.offset()));
             } else {
@@ -53,6 +54,7 @@ impl PageTable {
         let root_pte = {
             let index = vpn.level(2);
             if self.0[index].is_valid() {
+                // assert!(!self.0[index].is_leaf());
                 self.0[index]
             } else {
                 let frame = frame_alloc();
@@ -67,6 +69,7 @@ impl PageTable {
         let sub_pte = {
             let index = vpn.level(1);
             if sub_table.0[index].is_valid() {
+                // assert!(!sub_table.0[index].is_leaf());
                 sub_table.0[index]
             } else {
                 let frame = frame_alloc();
@@ -182,18 +185,19 @@ bitflags! {
 impl PteFlags {
     pub fn kernel_leaf() -> Self {
         PteFlags::V | PteFlags::R | PteFlags::W | PteFlags::X | PteFlags::G | PteFlags::D | PteFlags::A
+        // PteFlags::V | PteFlags::R | PteFlags::W | PteFlags::X | PteFlags::D | PteFlags::A
     }
 
     pub fn kernel_inner() -> Self {
-        PteFlags::V | PteFlags::G
-    }
-
-    pub fn user_inner() -> Self {
         PteFlags::V
     }
 
+    pub fn user_inner() -> Self {
+        PteFlags::V | PteFlags::U
+    }
+
     pub fn user_leaf() -> Self {
-        PteFlags::V | PteFlags::R | PteFlags::W | PteFlags::X
+        PteFlags::V | PteFlags::R | PteFlags::W | PteFlags::X | PteFlags::U
     }
 }
 

@@ -19,7 +19,7 @@ pub extern "C" fn _start() -> ! {
     // let HELLO: &[u8] = b"hello, world!";
     // sys_write(1, &[b'h']);
     // sys_write(1, HELLO);
-    println!("_start");
+    // println!("_start");
     let xstate = main();
     syscall::sys_exit(xstate);
 }

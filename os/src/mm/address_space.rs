@@ -37,18 +37,23 @@ impl AddressSpace {
             allocated_frames.push(ppn);
             ppn.as_page_table()
         };
-        unsafe {
-            (*root_page_table).clear();
-        }
+        // unsafe {
+        //     (*root_page_table).clear();
+        // }
 
         unsafe {
             let base_ppn = KERNEL_BASE_PAGE_TABLE.lock();
+            // root_page_table.write_volatile(base_ppn.as_page_table().read_volatile());
             root_page_table.write(base_ppn.as_page_table().read());
         }
 
         Self {
             asid,
-            brk: *KERNEL_BASE_BRK.lock(),
+            // asid: 0,
+            // brk: VPN(KERNEL_BASE_BRK.lock().0 + 10),
+            // brk: *KERNEL_BASE_BRK.lock(),
+            // brk: VPN(0x60000),
+            brk: VPN(0x70000),
             page_table: unsafe { (*root_page_table).ppn() },
             allocated_frames,
         }

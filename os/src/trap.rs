@@ -26,7 +26,7 @@ pub fn init() {
 
 #[no_mangle]
 pub extern "C" fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
-    println!("into trap handler");
+    // println!("into trap handler");
     let scause = scause::read();
     let stval = stval::read();
 
@@ -45,10 +45,19 @@ pub extern "C" fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
         Trap::Exception(Exception::StoreFault | Exception::StorePageFault) => {
             println!("[kernel] PageFault in application, kernel killed it.");
             println!("[kernel] stval: 0x{:x}, sepc: 0x{:x}", stval, sepc::read());
+
+            // unsafe {
+            //     let task_mgr = crate::task::TASK_MANAGER.lock();
+            //     let translated = (*task_mgr.addr_spaces[1].page_table.as_page_table()).translate(crate::mm::VirtAddr::new(stval)).unwrap().0;
+            //     crate::println!("buffer translate 0x{:x}", translated);
+            //     println!("decoded: {}", *(translated as *const u8));
+
+            // }
             exit_and_run_next();
         }
         Trap::Exception(Exception::IllegalInstruction) => {
             println!("[kernel] IllegalInstruction in application, kernel killed it.");
+            println!("[kernel] stval: 0x{:x}, sepc: 0x{:x}", stval, sepc::read());
             exit_and_run_next();
         }
         unknown => {

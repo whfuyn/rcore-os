@@ -9,9 +9,9 @@ riscv = "0.8"
 [profile.release]
 debug = true
 
-[[bin]]
-name = "hello-world"
-path = "src/bin/00hello_world.rs"
+# [[bin]]
+# name = "hello-world"
+# path = "src/bin/00hello_world.rs"
 
 # [[bin]]
 # name = "store-fault"
@@ -41,22 +41,26 @@ path = "src/bin/00hello_world.rs"
 # name = "write-c"
 # path = "src/bin/02write_c.rs"
 
-# [[bin]]
-# name = "power3"
-# path = "src/bin/00power_3.rs"
+[[bin]]
+name = "power3"
+path = "src/bin/00power_3.rs"
 
-# [[bin]]
-# name = "power5"
-# path = "src/bin/01power_5.rs"
+[[bin]]
+name = "power5"
+path = "src/bin/01power_5.rs"
 
-# [[bin]]
-# name = "power7"
-# path = "src/bin/02power_7.rs"
+[[bin]]
+name = "power7"
+path = "src/bin/02power_7.rs"
 
-# [[bin]]
-# name = "sleep"
-# path = "src/bin/03sleep.rs"
+[[bin]]
+name = "sleep"
+path = "src/bin/03sleep.rs"
 
-# [[bin]]
-# name = "test-task-info"
-# path = "src/bin/ch3_taskinfo.rs"
+[[bin]]
+name = "test-task-info"
+path = "src/bin/ch3_taskinfo.rs"
+
+[[bin]]
+name = "hello-world"
+path = "src/bin/00hello_world.rs"

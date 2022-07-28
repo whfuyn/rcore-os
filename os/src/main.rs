@@ -54,7 +54,10 @@ pub fn init() {
 pub extern "C" fn rust_main(kernel_pa: PhysAddr, kernel_size: usize) {
     init();
     mm::heap_allocator::init();
-    let kernel_pa_end = PhysAddr::new(kernel_pa.0 + kernel_size + PAGE_SIZE - 1).ppn();
+    let mut kernel_pa_end = PhysAddr::new(kernel_pa.0 + kernel_size + PAGE_SIZE - 1).ppn();
+    // TODO: remove it
+    // kernel_pa_end.0 += 100;
+    // let kernel_pa_end = PhysAddr::new(kernel_pa.0 + kernel_size + PAGE_SIZE - 1).ppn();
     let memory_pa_end = PhysAddr::new(QEMU_MEMORY_END).ppn();
     println!("kernel_pa_end: 0x{:x}", kernel_pa_end.0);
     mm::frame_allocator::init(kernel_pa_end, memory_pa_end);
@@ -65,8 +68,8 @@ pub extern "C" fn rust_main(kernel_pa: PhysAddr, kernel_size: usize) {
     println!("kernel size: {:x}", kernel_size);
     println!("kernel va end: {:x}", KERNEL_BASE_ADDRESS.0 + kernel_size + PAGE_SIZE - 1);
     let kernel_va_end = VirtAddr::new(KERNEL_BASE_ADDRESS.0 + kernel_size + PAGE_SIZE - 1).vpn();
-    // let kernel_avail_va = VPN(kernel_va_end.0 + 1);
-    let kernel_avail_va = VPN(kernel_va_end.0 + 20);
+    let kernel_avail_va = VPN(kernel_va_end.0 + 1);
+    // let kernel_avail_va = VPN(kernel_va_end.0 + 4096);
     let kbtb = PPN(satp::read().ppn());
     println!("kbtb: 0x{:x}", kbtb.0);
     println!("kernel_va_end: 0x{:x}", kernel_va_end.0);
