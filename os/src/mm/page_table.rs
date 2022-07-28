@@ -35,14 +35,18 @@ impl PageTable {
             let index = vpn.level(i);
             let pte = page_table[index];
             // crate::println!("transalte ppn: 0x{:x}", pte.ppn().0);
-            if pte.is_leaf() {
-                return Some(PhysAddr::new(pte.ppn().as_usize() << 12 | va.offset()));
-            } else {
-                unsafe {
-                    page_table = &(*pte.ppn().as_page_table()).0;
+            if pte.is_valid() {
+                if pte.is_leaf() {
+                    return Some(PhysAddr::new(pte.ppn().as_usize() << 12 | va.offset()));
+                } else {
+                    unsafe {
+                        page_table = &(*pte.ppn().as_page_table()).0;
+                    }
                 }
+            } else {
+                return None;
             }
-        }
+       }
         None
     }
 
@@ -119,13 +123,15 @@ impl PageTableEntry {
     }
 
     pub fn leaf(ppn: PPN, flags: PteFlags) -> Self {
-        assert!(flags.contains(PteFlags::V));
-        assert!(
-            // It's a leaf.
-            !(
-                (flags & (PteFlags::R | PteFlags::X)).is_empty()
-            )
-        );
+        // Disable this check because we use it to create an invalid pte.
+
+        // assert!(flags.contains(PteFlags::V));
+        // assert!(
+        //     // It's a leaf.
+        //     !(
+        //         (flags & (PteFlags::R | PteFlags::X)).is_empty()
+        //     )
+        // );
         if flags.contains(PteFlags::W) {
             // Required by the spec.
             assert!(flags.contains(PteFlags::R));
@@ -193,11 +199,13 @@ impl PteFlags {
     }
 
     pub fn user_inner() -> Self {
-        PteFlags::V | PteFlags::U
+        PteFlags::V
+        // PteFlags::V
     }
 
     pub fn user_leaf() -> Self {
-        PteFlags::V | PteFlags::R | PteFlags::W | PteFlags::X | PteFlags::U
+        PteFlags::V | PteFlags::U
+        // PteFlags::V 
     }
 }
 

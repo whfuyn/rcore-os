@@ -7,6 +7,8 @@ pub const SYSCALL_WRITE: usize = 64;
 pub const SYSCALL_YIELD: usize = 124;
 pub const SYSCALL_GET_TIME: usize = 169;
 pub const SYSCALL_GETTIMEOFDAY: usize = SYSCALL_GET_TIME;
+pub const SYSCALL_MUNMAP: usize = 215;
+pub const SYSCALL_MMAP: usize = 222;
 pub const SYSCALL_TASK_INFO: usize = 410;
 
 pub fn syscall(id: usize, args: [usize; 3]) -> isize {
@@ -44,4 +46,12 @@ pub fn sys_task_info(ti: &mut TaskInfo) -> isize {
 
 pub fn sys_get_time(time: &mut TimeVal, tz: usize) -> isize {
     syscall(SYSCALL_GET_TIME, [time as *mut TimeVal as usize, tz, 0])
+}
+
+pub fn sys_mmap(start: usize, len: usize, prot: usize) -> isize {
+    syscall(SYSCALL_MMAP, [start, len, prot])
+}
+
+pub fn sys_munmap(start: usize, len: usize) -> isize {
+    syscall(SYSCALL_MUNMAP, [start, len, 0])
 }

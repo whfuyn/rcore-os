@@ -106,3 +106,11 @@ pub fn task_info(info: &mut TaskInfo) -> isize {
 pub fn write(fd: usize, buf: &[u8]) -> isize {
     sys_write(fd, buf)
 }
+
+pub fn mmap(start: usize, len: usize, prot: usize) -> isize {
+    sys_mmap(start, len, prot)
+}
+
+pub fn munmap(start: usize, len: usize) -> isize {
+    sys_munmap(start, len)
+}

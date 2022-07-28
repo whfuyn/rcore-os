@@ -146,7 +146,6 @@ impl TaskManager {
         let mut addr_spaces: Vec<AddressSpace> = Vec::new();
         let mut stats: Vec<TaskStat> = Vec::new();
 
-        // let mut dbg_ksp = 0;
         for i in 0..num_app {
             let mut addr_space = AddressSpace::new(i + 2);
 
@@ -158,19 +157,13 @@ impl TaskManager {
             let kstack =  &mut *(kstack_ppn.as_pa().0 as *mut KernelStack);
             let task_init_trap_cx = TrapContext::app_init_context(
                 APP_BASE_ADDR as usize, usp
-                // start_task as usize, &SPACE as *const _ as usize
             );
             kstack.push_context(task_init_trap_cx);
             let ksp = kstack_vpn.as_va().0 + PAGE_SIZE - core::mem::size_of::<TrapContext>();
-            // dbg_ksp = ksp;
-            println!("ksp: 0x{:x}", ksp);
-            // let ksp = &SPACE as *const _ as usize;
 
             let mut tcb = TaskControlBlock::default();
             tcb.cx.sp = ksp;
-            // tcb.cx.sp = ;
             tcb.cx.ra = __restore as usize;
-            // tcb.cx.ra = start_task as usize;
             tcb.cx.satp = addr_space.satp();
 
 
@@ -178,13 +171,6 @@ impl TaskManager {
             addr_spaces.push(addr_space);
             stats.push(TaskStat::default());
         }
-
-        // println!("asp0 translate to 0x{:x}", addr_spaces[0].page_table.as_page_table().as_ref().unwrap().translate(VirtAddr::new(dbg_ksp)).unwrap().0);
-        // println!("asp1 translate to 0x{:x}", addr_spaces[1].page_table.as_page_table().as_ref().unwrap().translate(VirtAddr::new(dbg_ksp)).unwrap().0);
-
-
-        // println!("tcb[0]: {:p}", &(tcbs[0]));
-        // println!("tcb[1]: {:p}", &(tcbs[1]));
 
         let mut task_mgr = Self {
             app_starts,
@@ -197,9 +183,6 @@ impl TaskManager {
 
         for i in 0..num_app {
             task_mgr.load_task(i);
-        }
-        unsafe {
-            println!("jump to 0x{:x}", (*task_mgr.addr_spaces[0].page_table.as_page_table()).translate(VirtAddr::new(APP_BASE_ADDR as usize)).unwrap().0);
         }
 
         task_mgr
@@ -219,9 +202,7 @@ impl TaskManager {
             let (_vpn, ppn) = addr_space.alloc_page_at(load_to.vpn());
             let load_to_pa = ppn.as_pa().0 as *mut u8;
             // TODO: fix size
-            // core::ptr::copy_nonoverlapping(task_start as *const u8, load_to_pa, PAGE_SIZE);
-            core::ptr::copy((task_start + loaded_size) as *const u8, load_to_pa, PAGE_SIZE);
-            println!("task `{task_id}` loaded at va `0x{:x}` pa `0x{:x}`", load_to.0, ppn.as_pa().0);
+            core::ptr::copy_nonoverlapping((task_start + loaded_size) as *const u8, load_to_pa, PAGE_SIZE);
             loaded_size += PAGE_SIZE;
             load_to.0 += PAGE_SIZE;
         }
@@ -237,15 +218,7 @@ impl TaskManager {
     /// Return current task cx and next task cx
     pub unsafe fn move_to_next_task(&mut self, next_task: usize) -> (*mut TaskContext, *mut TaskContext) {
         let current_task = self.current_task;
-        // println!("curr task: {}", current_task);
-        // println!("next task: {}", next_task);
-        // let current_tcb = &self.tcbs[current_task];
-        // let next_tcb = &self.tcbs[next_task];
-        // println!("current tcb: {:x}", current_tcb as *const _ as usize);
-        // println!("next tcb: {:x}", next_tcb as *const _ as usize);
-
         let current_tcb = &mut self.tcbs[current_task];
-        // println!("current tcb: {:x}", current_tcb as *const _ as usize);
         let current_task_cx = &mut current_tcb.cx as *mut TaskContext;
         if current_tcb.status == TaskStatus::Running {
             current_tcb.status = TaskStatus::Ready;
@@ -253,15 +226,12 @@ impl TaskManager {
         self.stats[current_task].record_schedule_end();
 
         let next_tcb = &mut self.tcbs[next_task];
-        // println!("next tcb: {:x}", next_tcb as *const _ as usize);
         let next_task_cx = &mut next_tcb.cx as *mut TaskContext;
         assert!(next_tcb.status == TaskStatus::Ready);
         next_tcb.status = TaskStatus::Running;
         self.stats[next_task].record_schedule_begin();
 
         self.current_task = next_task;
-        // println!("current cx {:p}", current_task_cx);
-        // println!("next cx {:p}", next_task_cx);
 
         (current_task_cx, next_task_cx)
     }
@@ -270,13 +240,11 @@ impl TaskManager {
         let mut idx = (self.current_task + 1) % self.num_app;
         for _ in 0..self.num_app {
             if self.tcbs[idx].status == TaskStatus::Ready {
-                // println!("found task {}", idx);
                 return Some(idx);
             }
             idx = (idx + 1) % self.num_app;
         }
         if self.tcbs[self.current_task].status == TaskStatus::Running {
-            // println!("found current {}", idx);
             return Some(self.current_task);
         }
         None
@@ -315,31 +283,10 @@ impl TaskManager {
     // }
 }
 
-pub unsafe extern "C" fn start_task() {
-    println!("start task");
-    sbi::shutdown();
-}
-//     let task_mgr = TASK_MANAGER.lock();
-
-//     let current_task = task_mgr.current_task;
-//     let task_entry = get_task_base(current_task);
-//     drop(task_mgr);
-
-//     let mut task_init_trap_cx = TrapContext::app_init_context(
-//         task_entry as usize, USER_STACK[current_task].get_sp() as usize
-//     );
-
-//     // We are already in our kernel stack. Don't need to push context to kernel stack.
-//     __restore(
-//         &mut task_init_trap_cx as *mut TrapContext as usize
-//     );
-// }
-
 pub fn exit_and_run_next() {
     let mut task_mgr = TASK_MANAGER.lock();
 
     let current_task = task_mgr.current_task;
-    // println!("task `{current_task}` exited");
     let current_tcb = &mut task_mgr.tcbs[current_task];
     current_tcb.status = TaskStatus::Exited;
     drop(task_mgr);
@@ -347,25 +294,15 @@ pub fn exit_and_run_next() {
 }
 
 pub fn run_first_task() {
-    println!("access task mgr");
     let mut task_mgr = TASK_MANAGER.lock();
-    println!("access task mgr done");
 
     let first_task = if task_mgr.num_app > 0 { 0 } else { finish() };
     let (_, first_task_cx) = unsafe { task_mgr.move_to_next_task(first_task) };
 
     drop(task_mgr);
 
-    println!("switch to first.. 1111");
-    println!("debug cx: {:?}", unsafe {&*first_task_cx });
-    // set_next_trigger();
+    set_next_trigger();
     let mut unused = TaskContext::default();
-    println!("__switch: 0x{:x}", __switch as usize);
-    // println!("start_task: 0x{:x}", start_task as usize);
-    // extern {
-    //     fn what_the_fuck();
-    // }
-    // println!("wtf: 0x{:x}", what_the_fuck as usize);
     unsafe {
         __switch(&mut unused, first_task_cx);
     }
@@ -377,23 +314,11 @@ pub fn run_next_task() {
     let (current_task_cx, next_task_cx) = unsafe { task_mgr.move_to_next_task(next_task) };
     drop(task_mgr);
 
-    // println!("switch to next");
-    // println!("curr sepc: 0x{:x}", unsafe{ (*(((*current_task_cx).sp - 0) as *const TrapContext)).sepc });
-    // println!("next sepc: 0x{:x}", unsafe{ (*(((*next_task_cx).sp - 0) as *const TrapContext)).sepc });
-    // unsafe {
-    //     (*(((*next_task_cx).sp - 0) as *mut TrapContext)).sepc = 0x10000;
-    // }
     set_next_trigger();
     unsafe {
         __switch(current_task_cx, next_task_cx);
     }
 }
-
-// fn get_task_base(task_id: usize) -> *mut u8 {
-//     unsafe {
-//         APP_BASE_ADDR.add(task_id * MAX_APP_SIZE)
-//     }
-// }
 
 fn finish() -> ! {
     println!("[kernel] All apps have completed.");
@@ -401,7 +326,7 @@ fn finish() -> ! {
 }
 
 pub fn set_next_trigger() {
-    const TICKS_PER_SEC: usize = 1000;
+    const TICKS_PER_SEC: usize = 100;
     let current_time = time::get_time();
     let delta = time::CLOCK_FREQ / TICKS_PER_SEC;
     sbi::set_timer(current_time + delta);

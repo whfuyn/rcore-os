@@ -6,6 +6,7 @@ use crate::task::record_syscall;
 use crate::task::TASK_MANAGER;
 use crate::task::TaskStatus;
 use crate::time;
+use crate::mm::*;
 
 pub const STDOUT: usize = 1;
 pub const MAX_SYSCALL_NUM: usize = 500;
@@ -14,6 +15,8 @@ pub const SYSCALL_EXIT: usize = 93;
 pub const SYSCALL_WRITE: usize = 64;
 pub const SYSCALL_YIELD: usize = 124;
 pub const SYSCALL_GET_TIME: usize = 169;
+pub const SYSCALL_MUNMAP: usize = 215;
+pub const SYSCALL_MMAP: usize = 222;
 pub const SYSCALL_TASK_INFO: usize = 410;
 
 #[repr(C)]
@@ -48,16 +51,6 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
 
             let buffer_ptr = args[1];
             let buffer_size = args[2];
-            // crate::println!("buffer ptr: 0x{:x}", buffer_ptr);
-            // crate::println!("buffer size: 0x{:x}", buffer_size);
-            // let task_mgr = TASK_MANAGER.lock();
-
-            // unsafe {
-            //     let translated = (*task_mgr.addr_spaces[0].page_table.as_page_table()).translate(crate::mm::VirtAddr::new(buffer_ptr as usize)).unwrap().0;
-            //     crate::println!("buffer translate 0x{:x}", translated);
-            //     println!("decoded: {}", *(translated as *const u8));
-
-            // }
             let buffer = unsafe { core::slice::from_raw_parts(buffer_ptr as *const u8, args[2]) };
 
             print!(
@@ -79,6 +72,105 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
             // which should be 12.5 instead of 12.
             time_val.usec = t % time::CLOCKS_PER_SEC / time::CLOCKS_PER_MILLI_SEC * 1000;
 
+            0
+        }
+        SYSCALL_MMAP => {
+            // TODO: check start
+            let start = VirtAddr::new(args[0]);
+            let len = args[1];
+            let prot = args[2];
+
+            if start.offset() != 0 {
+                return -1;
+            }
+            if len == 0 {
+                return 0;
+            }
+            if prot & !7 != 0 || prot & 7 == 0 {
+                return -1;
+            }
+
+            let mut task_mgr = TASK_MANAGER.lock();
+            let current_task = task_mgr.current_task();
+            let addr_space = &mut task_mgr.addr_spaces[current_task];
+
+            let mut checked_len = 0;
+            while checked_len < len {
+                let checked_va = VirtAddr::new(start.0 + checked_len);
+                if addr_space.translate(checked_va).is_some() {
+                    return -1;
+                }
+                checked_len += 4096;
+            }
+
+            let mut flags_at_level = [
+                PteFlags::user_leaf(),
+                PteFlags::user_inner(),
+                PteFlags::user_inner(),
+            ];
+            if prot & 0b1 != 0 {
+                flags_at_level[0] |= PteFlags::R;
+            }
+            if prot & 0b10 != 0 {
+                // W imply R
+                flags_at_level[0] |= PteFlags::R | PteFlags::W;
+            }
+            if prot & 0b100 != 0 {
+                flags_at_level[0] |= PteFlags::X;
+            }
+            let mut mapped_len = 0;
+            while mapped_len < len {
+                let mapped_va = VirtAddr::new(start.0 + mapped_len);
+                let frame = addr_space.alloc_frame();
+                addr_space.build_mapping(mapped_va.vpn(), frame, flags_at_level);
+                mapped_len += 4096;
+            }
+
+            unsafe {
+                // use riscv::register::satp;
+                // satp::set(satp::Mode::Sv39, addr_space.asid, addr_space.page_table.0);
+                // riscv::register::sstatus::set_sum();
+                riscv::asm::sfence_vma_all();
+            }
+
+            0
+        }
+        SYSCALL_MUNMAP => {
+            let start = VirtAddr::new(args[0]);
+            let len = args[1];
+            if start.offset() != 0 {
+                return -1;
+            }
+
+            let mut task_mgr = TASK_MANAGER.lock();
+            let current_task = task_mgr.current_task();
+            let addr_space = &mut task_mgr.addr_spaces[current_task];
+
+            let mut checked_len = 0;
+            while checked_len < len {
+                let checked_va = VirtAddr::new(start.0 + checked_len);
+                if addr_space.translate(checked_va).is_none() {
+                    return -1;
+                }
+                checked_len += 4096;
+            }
+            let flags_at_level = [
+                PteFlags::empty(),
+                PteFlags::user_inner(),
+                PteFlags::user_inner(),
+            ];
+
+            let mut unmapped_len = 0;
+            while unmapped_len < len {
+                let unmapped_va = VirtAddr::new(start.0 + unmapped_len);
+                let frame = addr_space.translate(unmapped_va).unwrap().ppn();
+                addr_space.build_mapping(unmapped_va.vpn(), frame, flags_at_level);
+                unmapped_len += 4096;
+            }
+
+            unsafe {
+                riscv::asm::sfence_vma_all();
+            }
             0
         }
         SYSCALL_TASK_INFO => {

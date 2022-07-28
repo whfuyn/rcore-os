@@ -67,8 +67,8 @@ fn loader_main() {
     }
 
     unsafe {
-        println!("kbpb in loader: 0x{:x}", KERNEL_ROOT_PAGE_TABLE.pa().ppn().as_usize());
-        println!("kspb in loader: 0x{:x}", KERNEL_SUB_PAGE_TABLE.pa().ppn().as_usize());
+        // println!("kbpb in loader: 0x{:x}", KERNEL_ROOT_PAGE_TABLE.pa().ppn().as_usize());
+        // println!("kspb in loader: 0x{:x}", KERNEL_SUB_PAGE_TABLE.pa().ppn().as_usize());
         satp::set(Mode::Sv39, 0, KERNEL_ROOT_PAGE_TABLE.pa().ppn().as_usize());
         // Is it necessary?
         riscv::asm::sfence_vma_all();

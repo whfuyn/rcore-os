@@ -10,14 +10,14 @@ pub static KERNEL_BASE_BRK: Mutex<VPN> = Mutex::new(VPN(0));
 pub fn init(kernel_base_page_table: PPN, kernel_base_brk: VPN) {
     *KERNEL_BASE_PAGE_TABLE.lock() = kernel_base_page_table;
     *KERNEL_BASE_BRK.lock() = kernel_base_brk;
-    println!("kernel base brk: 0x{:x}", kernel_base_brk.0);
 }
 
 pub struct AddressSpace {
-    asid: usize,
+    pub asid: usize,
     brk: VPN,
     // TODO: no pub
     pub page_table: PPN,
+    // TODO: free those frames
     allocated_frames: Vec<PPN>,
 }
 
@@ -26,7 +26,7 @@ impl AddressSpace {
         let mut allocated_frames = Vec::new();
         let root_page_table = {
             let ppn = frame_alloc();
-            println!("frame alloced, ppn: 0x{:x}", ppn.as_usize());
+            // println!("frame alloced, ppn: 0x{:x}", ppn.as_usize());
             // TODO: remove it
             // unsafe {
             //     let addr = (ppn.as_pa().0 as *mut u8).add(0x1ff * 8);
@@ -37,10 +37,6 @@ impl AddressSpace {
             allocated_frames.push(ppn);
             ppn.as_page_table()
         };
-        // unsafe {
-        //     (*root_page_table).clear();
-        // }
-
         unsafe {
             let base_ppn = KERNEL_BASE_PAGE_TABLE.lock();
             // root_page_table.write_volatile(base_ppn.as_page_table().read_volatile());
@@ -49,10 +45,7 @@ impl AddressSpace {
 
         Self {
             asid,
-            // asid: 0,
-            // brk: VPN(KERNEL_BASE_BRK.lock().0 + 10),
-            // brk: *KERNEL_BASE_BRK.lock(),
-            // brk: VPN(0x60000),
+            // Be careful not to overlap with global mapping (esp. 1 GB pte).
             brk: VPN(0x70000),
             page_table: unsafe { (*root_page_table).ppn() },
             allocated_frames,
@@ -103,7 +96,7 @@ impl AddressSpace {
 
     pub fn alloc_frame(&mut self) -> PPN {
         let ppn = frame_alloc();
-        println!("frame alloced, ppn: 0x{:x}", ppn.as_usize());
+        // println!("frame alloced, ppn: 0x{:x}", ppn.as_usize());
         self.allocated_frames.push(ppn);
         ppn
     }
@@ -116,9 +109,9 @@ impl AddressSpace {
             let index = vpn.level(2);
             // println!("root table: 0x{:x}", root_table as *mut _ as usize);
             // println!("access root table index 0x{:x}", index);
-            let addr = unsafe { VirtAddr::new(&root_table.0[index] as *const _ as usize) };
+            // let addr = unsafe { VirtAddr::new(&root_table.0[index] as *const _ as usize) };
             // println!("entry at 0x{:x} 0b{:b}", addr.0, addr.0);
-            let base_table = unsafe { &*(*KERNEL_BASE_PAGE_TABLE.lock()).as_page_table() };
+            // let base_table = unsafe { &*(*KERNEL_BASE_PAGE_TABLE.lock()).as_page_table() };
             // println!("translated addr 0x{:x}", base_table.translate(addr).unwrap().0);
 
             // println!("entry 0x{:x}", root_table.0[index].0);
@@ -162,6 +155,12 @@ impl AddressSpace {
             sub_table.set_entry(vpn.level(1), sub_pte);
             root_table.set_entry(vpn.level(2), root_pte);
         }
-        // println!("set entry done");
+        // println!("map 0x{:x} to 0x{:x}", vpn.as_va().0, ppn.as_pa().0);
+    }
+
+    pub fn translate(&self, va: VirtAddr) -> Option<PhysAddr> {
+        unsafe {
+            (*self.page_table.as_page_table()).translate(va)
+        }
     }
 }
