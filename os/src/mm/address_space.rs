@@ -2,7 +2,7 @@ use super::*;
 use alloc::vec::Vec;
 use spin::Mutex;
 use frame_allocator::frame_alloc;
-use crate::println;
+// use crate::println;
 
 pub static KERNEL_BASE_PAGE_TABLE: Mutex<PPN> = Mutex::new(PPN(0));
 pub static KERNEL_BASE_BRK: Mutex<VPN> = Mutex::new(VPN(0));
@@ -13,7 +13,7 @@ pub fn init(kernel_base_page_table: PPN, kernel_base_brk: VPN) {
 }
 
 pub struct AddressSpace {
-    pub asid: usize,
+    asid: usize,
     brk: VPN,
     // TODO: no pub
     pub page_table: PPN,

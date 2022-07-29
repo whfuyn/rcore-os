@@ -1,7 +1,7 @@
 mod context;
 
 use crate::task::{
-    run_next_task, exit_and_run_next, set_next_trigger,
+    run_next_task, exit_and_run_next,
 };
 use crate::println;
 use crate::syscall::syscall;

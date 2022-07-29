@@ -2,19 +2,19 @@ use core::cell::SyncUnsafeCell;
 use crate::trap::TrapContext;
 
 const KERNEL_STACK_SIZE: usize = 4096;
-const USER_STACK_SIZE: usize = 4096;
+// const USER_STACK_SIZE: usize = 4096;
 
 #[repr(C, align(4096))]
 pub struct KernelStack(SyncUnsafeCell<[u8; KERNEL_STACK_SIZE]>);
 
-#[repr(C, align(4096))]
-pub struct UserStack(SyncUnsafeCell<[u8; USER_STACK_SIZE]>);
+// #[repr(C, align(4096))]
+// pub struct UserStack(SyncUnsafeCell<[u8; USER_STACK_SIZE]>);
 
 
 impl KernelStack {
-    pub const fn new() -> Self {
-        Self(SyncUnsafeCell::new([0; KERNEL_STACK_SIZE]))
-    }
+    // pub const fn new() -> Self {
+    //     Self(SyncUnsafeCell::new([0; KERNEL_STACK_SIZE]))
+    // }
 
     pub fn get_sp(&self) -> usize {
         unsafe {
@@ -34,16 +34,16 @@ impl KernelStack {
     }
 }
 
-impl UserStack {
-    pub const fn new() -> Self {
-        Self(SyncUnsafeCell::new([0; USER_STACK_SIZE]))
-    }
+// impl UserStack {
+//     pub const fn new() -> Self {
+//         Self(SyncUnsafeCell::new([0; USER_STACK_SIZE]))
+//     }
 
-    pub fn get_sp(&self) -> *mut u8 {
-        unsafe {
-            let stack = self.0.get();
-            let len = (*stack).len() as isize;
-            (stack as *mut u8).offset(len)
-        }
-    }
-}
+//     pub fn get_sp(&self) -> *mut u8 {
+//         unsafe {
+//             let stack = self.0.get();
+//             let len = (*stack).len() as isize;
+//             (stack as *mut u8).offset(len)
+//         }
+//     }
+// }

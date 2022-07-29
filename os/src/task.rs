@@ -2,13 +2,11 @@ mod stack;
 
 use lazy_static::lazy_static;
 use core::arch::global_asm;
-use core::arch::asm;
-use core::mem::MaybeUninit;
 use spin::Mutex;
 use alloc::vec::Vec;
 use crate::mm::*;
 
-use stack::{ KernelStack, UserStack };
+use stack::KernelStack;
 use crate::trap::TrapContext;
 use crate::sbi;
 use crate::println;
@@ -17,11 +15,7 @@ use crate::time;
 use crate::syscall::MAX_SYSCALL_NUM;
 use crate::mm::address_space::AddressSpace;
 
-const MAX_TASK_NUM: usize = 32;
-
-// const APP_BASE_ADDR: *mut u8 = 0x80400000 as *mut u8;
 const APP_BASE_ADDR: *mut u8 = 0x10000 as *mut u8;
-const MAX_APP_SIZE: usize = 0x20000;
 
 const PAGE_SIZE: usize = 4096;
 

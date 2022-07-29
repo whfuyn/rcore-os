@@ -4,7 +4,7 @@ use frame_allocator::frame_alloc;
 use bitflags::bitflags;
 
 const PAGE_TABLE_ENTRIES: usize = 1 << 9;
-const PAGE_TABLE_SIZE: usize = PAGE_TABLE_ENTRIES * 8;
+// const PAGE_TABLE_SIZE: usize = PAGE_TABLE_ENTRIES * 8;
 
 #[derive(Debug, Clone)]
 #[repr(C, align(4096))]
