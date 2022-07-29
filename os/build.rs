@@ -59,39 +59,44 @@ fn main() {
     });
 
     let user_lib_out_dir = "../user-lib/target/riscv64gc-unknown-none-elf/release";
-    let stripped_bin_paths: Vec<String> = bins
-        .iter()
-        .map(|bin| {
-            let bin_path = format!("{user_lib_out_dir}/{bin}");
-            let stripped_bin_path = format!("{bin_path}.bin");
+    // let mut stripped_bin_paths: Vec<String> = bins
+    //     .iter()
+    //     .map(|bin| {
+    //         let bin_path = format!("{user_lib_out_dir}/{bin}");
+    //         let stripped_bin_path = format!("{bin_path}.bin");
 
-            let strip_user_lib_res = Command::new("rust-objcopy")
-                .args([
-                    "--binary-architecture=riscv64",
-                    "--strip-all",
-                    "-O",
-                    "binary",
-                    &bin_path,
-                    &stripped_bin_path,
-                ])
-                .output();
+    //         let strip_user_lib_res = Command::new("rust-objcopy")
+    //             .args([
+    //                 "--binary-architecture=riscv64",
+    //                 "--strip-all",
+    //                 "-O",
+    //                 "binary",
+    //                 &bin_path,
+    //                 &stripped_bin_path,
+    //             ])
+    //             .output();
 
-            match strip_user_lib_res {
-                Ok(output) if output.status.success() => (),
-                Ok(output) => {
-                    panic!("stderr: {}", String::from_utf8_lossy(&output.stderr));
-                }
-                Err(e) => panic!("failed to run strip cmd for `{bin_path}`: {e}"),
-            }
-            stripped_bin_path
-        })
+    //         match strip_user_lib_res {
+    //             Ok(output) if output.status.success() => (),
+    //             Ok(output) => {
+    //                 panic!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+    //             }
+    //             Err(e) => panic!("failed to run strip cmd for `{bin_path}`: {e}"),
+    //         }
+    //         stripped_bin_path
+    //     })
+    //     .collect();
+
+    // bins.push("ch2b_hello_world".into());
+    // stripped_bin_paths.push("../ch2b_hello_world.bin".into());
+    let elf_paths = bins.iter()
+        .map(|b| format!("{user_lib_out_dir}/{b}"))
         .collect();
-
-    let link_app_asm = build_link_app_asm(bins, stripped_bin_paths);
+    let link_app_asm = build_link_app_asm(bins, elf_paths);
     fs::write("src/link_app.S", link_app_asm).expect("cannot write link_app.S");
 }
 
-fn build_link_app_asm(bins: Vec<String>, stripped_bin_paths: Vec<String>) -> String {
+fn build_link_app_asm(bins: Vec<String>, elf_paths: Vec<String>) -> String {
     // Build start and end addr for each app.
     let mut link_app_asm = format!(
 "    .p2align 3
@@ -120,14 +125,14 @@ _app_info_table:
         }
     }
 
-    for (i, stripped_bin_path) in stripped_bin_paths.iter().enumerate() {
+    for (i, elf_path) in elf_paths.iter().enumerate() {
         let entry = format!(
 "
     .section .data
     .global app_{i}_start
     .global app_{i}_end
 app_{i}_start:
-    .incbin \"{stripped_bin_path}\"
+    .incbin \"{elf_path}\"
 app_{i}_end:
 "
         );

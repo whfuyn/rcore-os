@@ -15,7 +15,7 @@ use crate::time;
 use crate::syscall::MAX_SYSCALL_NUM;
 use crate::mm::address_space::AddressSpace;
 
-const APP_BASE_ADDR: *mut u8 = 0x10000 as *mut u8;
+// const APP_BASE_ADDR: *mut u8 = 0x10000 as *mut u8;
 
 const PAGE_SIZE: usize = 4096;
 
@@ -136,43 +136,43 @@ impl TaskManager {
             core::slice::from_raw_parts(table, num_app + 1)
         };
 
-        let mut tcbs: Vec<TaskControlBlock> = Vec::new();
-        let mut addr_spaces: Vec<AddressSpace> = Vec::new();
-        let mut stats: Vec<TaskStat> = Vec::new();
+        // let mut tcbs: Vec<TaskControlBlock> = Vec::new();
+        // let mut addr_spaces: Vec<AddressSpace> = Vec::new();
+        // let mut stats: Vec<TaskStat> = Vec::new();
 
-        for i in 0..num_app {
-            let mut addr_space = AddressSpace::new(i + 2);
+        // for i in 0..num_app {
+        //     let mut addr_space = AddressSpace::new(i + 2);
 
-            // TODO: put ustack in lower addr
-            let (ustack_vpn, _) = addr_space.alloc_page();
-            let usp = ustack_vpn.as_va().0 + PAGE_SIZE;
+        //     // TODO: put ustack in lower addr
+        //     let (ustack_vpn, _) = addr_space.alloc_page();
+        //     let usp = ustack_vpn.as_va().0 + PAGE_SIZE;
 
-            let (kstack_vpn, kstack_ppn) = addr_space.alloc_kernel_page();
-            let kstack =  &mut *(kstack_ppn.as_pa().0 as *mut KernelStack);
-            let task_init_trap_cx = TrapContext::app_init_context(
-                APP_BASE_ADDR as usize, usp
-            );
-            kstack.push_context(task_init_trap_cx);
-            let ksp = kstack_vpn.as_va().0 + PAGE_SIZE - core::mem::size_of::<TrapContext>();
+        //     let (kstack_vpn, kstack_ppn) = addr_space.alloc_kernel_page();
+        //     let kstack =  &mut *(kstack_ppn.as_pa().0 as *mut KernelStack);
+        //     let task_init_trap_cx = TrapContext::app_init_context(
+        //         APP_BASE_ADDR as usize, usp
+        //     );
+        //     kstack.push_context(task_init_trap_cx);
+        //     let ksp = kstack_vpn.as_va().0 + PAGE_SIZE - core::mem::size_of::<TrapContext>();
 
-            let mut tcb = TaskControlBlock::default();
-            tcb.cx.sp = ksp;
-            tcb.cx.ra = __restore as usize;
-            tcb.cx.satp = addr_space.satp();
+        //     let mut tcb = TaskControlBlock::default();
+        //     tcb.cx.sp = ksp;
+        //     tcb.cx.ra = __restore as usize;
+        //     tcb.cx.satp = addr_space.satp();
 
 
-            tcbs.push(tcb);
-            addr_spaces.push(addr_space);
-            stats.push(TaskStat::default());
-        }
+        //     tcbs.push(tcb);
+        //     addr_spaces.push(addr_space);
+        //     stats.push(TaskStat::default());
+        // }
 
         let mut task_mgr = Self {
             app_starts,
             num_app,
             current_task: 0,
-            tcbs,
-            addr_spaces,
-            stats,
+            tcbs: Vec::new(),
+            addr_spaces: Vec::new(),
+            stats: Vec::new(),
         };
 
         for i in 0..num_app {
@@ -187,24 +187,75 @@ impl TaskManager {
         let task_end = self.app_starts[task_id + 1];
         let task_size = task_end.saturating_sub(task_start);
 
-        const PAGE_SIZE: usize = 4096;
-        let mut loaded_size = 0usize;
-        let mut load_to = VirtAddr::new(APP_BASE_ADDR as usize);
+        let task_data = core::slice::from_raw_parts(task_start as *const u8, task_size);
+        let elf = xmas_elf::ElfFile::new(task_data).expect("invalid elf data");
+        let magic = elf.header.pt1.magic;
+        assert_eq!(magic, [0x7f, 0x45, 0x4c, 0x46], "invalid elf");
+        let entry_point = elf.header.pt2.entry_point();
 
-        let addr_space = &mut self.addr_spaces[task_id];
-        while loaded_size < task_size {
-            let (_vpn, ppn) = addr_space.alloc_page_at(load_to.vpn());
-            let load_to_pa = ppn.as_pa().0 as *mut u8;
-            // TODO: fix size
-            core::ptr::copy_nonoverlapping((task_start + loaded_size) as *const u8, load_to_pa, PAGE_SIZE);
-            loaded_size += PAGE_SIZE;
-            load_to.0 += PAGE_SIZE;
+        let mut addr_space = AddressSpace::new(task_id + 2);
+        for ph in elf.program_iter() {
+            if ph.get_type().unwrap() == xmas_elf::program::Type::Load {
+                let start_va = VirtAddr::new(ph.virtual_addr() as usize);
+                let end_va = VirtAddr::new((ph.virtual_addr() + ph.mem_size()) as usize);
+                let flags_at_level = {
+                    let mut flags_at_level = [
+                        PteFlags::user_leaf(),
+                        PteFlags::user_inner(),
+                        PteFlags::user_inner(),
+                    ];
+                    let ph_flags = ph.flags();
+                    if ph_flags.is_read() {
+                        flags_at_level[0] |= PteFlags::R;
+                    }
+                    if ph_flags.is_write() {
+                        // W imply R
+                        flags_at_level[0] |= PteFlags::R;
+                        flags_at_level[0] |= PteFlags::W;
+                    }
+                    if ph_flags.is_execute() {
+                        flags_at_level[0] |= PteFlags::X;
+                    }
+                    flags_at_level
+                };
+                let mut mapped_size = 0;
+                let mut mapped_va = start_va;
+                while mapped_va.0 < end_va.0 {
+                    let frame = addr_space.alloc_frame();
+                    if mapped_size < ph.file_size() {
+                        core::ptr::copy_nonoverlapping(
+                            &task_data[(ph.offset() + mapped_size) as usize] as *const u8,
+                            frame.as_pa().0 as *mut u8,
+                            core::cmp::min(ph.file_size().checked_sub(mapped_size).unwrap(), 4096) as usize
+                        );
+                    }
+                    addr_space.build_mapping(mapped_va.vpn(), frame, flags_at_level);
+                    mapped_va.0 += 4096;
+                    mapped_size += 4096;
+                }
+            }
         }
-        // TODO
-        addr_space.alloc_page_at(load_to.vpn());
-        // addr_space.alloc_page_at(load_to.vpn());
-        // addr_space.alloc_page_at(load_to.vpn());
-        // addr_space.alloc_page_at(load_to.vpn());
+
+        let (ustack_vpn, _) = addr_space.alloc_page();
+        let usp = ustack_vpn.as_va().0 + PAGE_SIZE;
+
+        let (kstack_vpn, kstack_ppn) = addr_space.alloc_kernel_page();
+        let kstack =  &mut *(kstack_ppn.as_pa().0 as *mut KernelStack);
+        let task_init_trap_cx = TrapContext::app_init_context(
+            entry_point as usize, usp
+            // APP_BASE_ADDR as usize, usp
+        );
+        kstack.push_context(task_init_trap_cx);
+        let ksp = kstack_vpn.as_va().0 + PAGE_SIZE - core::mem::size_of::<TrapContext>();
+
+        let mut tcb = TaskControlBlock::default();
+        tcb.cx.sp = ksp;
+        tcb.cx.ra = __restore as usize;
+        tcb.cx.satp = addr_space.satp();
+
+        self.tcbs.push(tcb);
+        self.addr_spaces.push(addr_space);
+        self.stats.push(TaskStat::default());
 
         self.tcbs[task_id].status = TaskStatus::Ready;
     }
