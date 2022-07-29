@@ -27,14 +27,14 @@ build-os:
 build-sbi:
 	cd $(RUSTSBI_QEMU) && cargo make
 
-run: build-loader build-os
+run: build-os build-loader
 	@qemu-system-riscv64 \
 		-machine virt \
 		-nographic \
 		-bios rustsbi-qemu-orig.bin \
 		-device loader,file=$(LOADER_OUT_DIR)/$(LOADER).bin,addr=0x80200000
 
-run-self-built-sbi: build-loader build-os build-sbi
+run-self-built-sbi: build-os build-loader build-sbi
 	@qemu-system-riscv64 \
 		-machine virt \
 		-nographic \
@@ -42,7 +42,7 @@ run-self-built-sbi: build-loader build-os build-sbi
 	 	-bios $(RUSTSBI_QEMU_OUT_DIR)/$(RUSTSBI_QEMU).bin \
 		-device loader,file=$(LOADER_OUT_DIR)/$(LOADER).bin,addr=0x80200000
 
-debug: build-loader build-os
+debug: build-os build-loader
 	@qemu-system-riscv64 \
 		-machine virt \
 		-nographic \
