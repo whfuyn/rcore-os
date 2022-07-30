@@ -1,6 +1,5 @@
 use crate::utils::BitField;
 use super::*;
-use frame_allocator::frame_alloc;
 use bitflags::bitflags;
 use spin::Mutex;
 use crate::config::*;
@@ -9,7 +8,7 @@ use riscv::register::satp;
 const PAGE_TABLE_ENTRIES: usize = 1 << 9;
 // const PAGE_TABLE_SIZE: usize = PAGE_TABLE_ENTRIES * 8;
 
-static GLOBAL_PTES: Mutex<GlobalPtes> = Mutex::new(GlobalPtes{
+pub static GLOBAL_PTES: Mutex<GlobalPtes> = Mutex::new(GlobalPtes{
     kernel_pte_index: 0,
     kernel_pte: PageTableEntry::zero(),
 
@@ -17,14 +16,14 @@ static GLOBAL_PTES: Mutex<GlobalPtes> = Mutex::new(GlobalPtes{
     memory_pte: PageTableEntry::zero(),
 });
 
-struct GlobalPtes {
+pub struct GlobalPtes {
     // kernel memory mapping
-    kernel_pte_index: usize,
-    kernel_pte: PageTableEntry,
+    pub kernel_pte_index: usize,
+    pub kernel_pte: PageTableEntry,
 
     // physical memory identity mapping
-    memory_pte_index: usize,
-    memory_pte: PageTableEntry,
+    pub memory_pte_index: usize,
+    pub memory_pte: PageTableEntry,
 }
 
 pub fn init() {
@@ -109,60 +108,11 @@ impl PageTable {
         *self = Self::empty();
     }
 
-    pub fn build_mapping(&mut self, vpn: VPN, ppn: PPN, flags_at_level: [PteFlags; 3]) {
-        let root_pte = {
-            let index = vpn.level(2);
-            if self.0[index].is_valid() {
-                // assert!(!self.0[index].is_leaf());
-                self.0[index]
-            } else {
-                let frame = frame_alloc();
-                unsafe {
-                    frame.as_page_table_mut().clear();
-                }
-                PageTableEntry::inner(frame, flags_at_level[2])
-            }
-        };
-
-        let sub_table = unsafe { root_pte.as_page_table_mut() };
-        let sub_pte = {
-            let index = vpn.level(1);
-            if sub_table.0[index].is_valid() {
-                // assert!(!sub_table.0[index].is_leaf());
-                sub_table.0[index]
-            } else {
-                let frame = frame_alloc();
-                unsafe {
-                    frame.as_page_table_mut().clear();
-                }
-                PageTableEntry::inner(frame, flags_at_level[1])
-            }
-        };
-
-        let leaf_table = unsafe { sub_pte.as_page_table_mut() };
-        let leaf_pte = PageTableEntry::leaf(ppn, flags_at_level[0]);
-        unsafe {
-            // Set entries in reverse order to avoid accessing uninit entries.
-            leaf_table.set_entry(vpn.level(0), leaf_pte);
-            sub_table.set_entry(vpn.level(1), sub_pte);
-            self.set_entry(vpn.level(2), root_pte);
-        }
-    }
-
-    // fn build_kernel_mapping(&mut self, vpn: VPN, ppn: PPN) {
-    //     let flags_at_level = [
-    //         PteFlags::kernel_inner(),
-    //         PteFlags::kernel_inner(),
-    //         PteFlags::kernel_leaf(),
-    //     ];
-    //     self.build_mapping(vpn, ppn, flags_at_level)
-    // }
 }
 
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
 pub struct PageTableEntry(pub usize);
-
 
 impl PageTableEntry {
     pub const fn zero() -> Self {
@@ -219,6 +169,12 @@ impl PageTableEntry {
 
     pub fn ppn(self) -> PPN {
         PPN(self.0.get_bits(10..=53))
+    }
+
+    pub fn with_ppn(self, ppn: PPN) -> Self {
+        let mut ret = self;
+        ret.set_ppn(ppn);
+        ret
     }
 
     pub unsafe fn as_page_table<'a>(self) -> &'a PageTable {

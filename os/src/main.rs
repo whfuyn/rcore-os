@@ -5,7 +5,6 @@
 
 use os::*;
 use mm::*;
-use riscv::register::satp;
 use config::*;
 
 core::arch::global_asm!(include_str!("entry.S"));

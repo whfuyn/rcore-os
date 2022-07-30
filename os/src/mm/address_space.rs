@@ -1,9 +1,7 @@
 use super::*;
 use alloc::vec::Vec;
-use spin::Mutex;
 use frame_allocator::*;
-use crate::config::*;
-use riscv::register::satp;
+use page_table::GLOBAL_PTES;
 // use crate::println;
 
 pub struct AddressSpace {
@@ -35,6 +33,7 @@ impl AddressSpace {
     }
 
     pub fn from_elf(elf: &[u8], asid: usize) -> Self {
+        let addr_space = Self::new(asid);
 
         todo!()
     }
@@ -90,6 +89,21 @@ impl AddressSpace {
         ppn
     }
 
+    fn alloc_page_table(&mut self) -> PPN {
+        let ppn = frame_alloc();
+        unsafe {
+            ppn.as_page_table_mut().clear();
+        }
+        self.allocated_frames.push(ppn);
+        ppn
+    }
+
+    pub fn translate(&self, va: VirtAddr) -> Option<PhysAddr> {
+        unsafe {
+            (*self.page_table.as_page_table()).translate(va)
+        }
+    }
+
     pub fn build_mapping(&mut self, vpn: VPN, ppn: PPN, flags_at_level: [PteFlags; 3]) {
         let root_table = unsafe { self.page_table.as_page_table_mut() };
         let root_pte = {
@@ -97,10 +111,7 @@ impl AddressSpace {
             if root_table.0[index].is_valid() {
                 root_table.0[index]
             } else {
-                let frame = self.alloc_frame();
-                unsafe {
-                    frame.as_page_table_mut().clear();
-                }
+                let frame = self.alloc_page_table();
                 PageTableEntry::inner(frame, flags_at_level[2])
             }
         };
@@ -111,10 +122,7 @@ impl AddressSpace {
             if sub_table.0[index].is_valid() {
                 sub_table.0[index]
             } else {
-                let frame = self.alloc_frame();
-                unsafe {
-                    frame.as_page_table_mut().clear();
-                }
+                let frame = self.alloc_page_table();
                 PageTableEntry::inner(frame, flags_at_level[1])
             }
         };
@@ -130,10 +138,55 @@ impl AddressSpace {
         // println!("map 0x{:x} to 0x{:x}", vpn.as_va().0, ppn.as_pa().0);
     }
 
-    pub fn translate(&self, va: VirtAddr) -> Option<PhysAddr> {
-        unsafe {
-            (*self.page_table.as_page_table()).translate(va)
+    pub fn dup(&self, asid: usize) -> Self {
+        let mut new = Self::new(asid) ;
+        new.brk = self.brk;
+
+        let global_index = {
+            let global_ptes = GLOBAL_PTES.lock();
+            [global_ptes.kernel_pte_index, global_ptes.memory_pte_index]
+        };
+        let root_table = unsafe { self.page_table.as_page_table() };
+        let new_root_table = unsafe { new.page_table.as_page_table_mut() };
+        for (index, root_pte) in root_table.0.iter().enumerate() {
+            if index == global_index[0] || index == global_index[1] {
+                continue;
+            }
+            let sub_table = unsafe { root_pte.as_page_table() };
+            let new_sub_table = {
+                let new_sub_ppn = new.alloc_page_table();
+                unsafe {
+                    new_root_table.set_entry(index, root_pte.with_ppn(new_sub_ppn));
+                    new_sub_ppn.as_page_table_mut()
+                }
+            };
+
+            for (index, sub_pte) in sub_table.0.iter().enumerate() {
+                let leaf_table = unsafe { sub_pte.as_page_table() };
+                let new_leaf_table = {
+                    let new_leaf_ppn = new.alloc_page_table();
+                    unsafe {
+                        new_sub_table.set_entry(index, sub_pte.with_ppn(new_leaf_ppn));
+                        new_leaf_ppn.as_page_table_mut()
+                    }
+                };
+                for (index, leaf_pte) in leaf_table.0.iter().enumerate() {
+                    let leaf_page = leaf_pte.ppn();
+                    let new_leaf_page = new.alloc_frame();
+                    unsafe {
+                        // Use the identity mapping of physical memory
+                        core::ptr::copy_nonoverlapping(
+                            leaf_page.as_pa().0 as *const u8, 
+                            new_leaf_page.as_pa().0 as *mut u8,
+                            4096
+                        );
+                        new_leaf_table.set_entry(index, leaf_pte.with_ppn(new_leaf_page))
+                    }
+                }
+            }
         }
+
+        new
     }
 }
 
