@@ -15,6 +15,10 @@ pub const SYSCALL_EXIT: usize = 93;
 pub const SYSCALL_WRITE: usize = 64;
 pub const SYSCALL_YIELD: usize = 124;
 pub const SYSCALL_GET_TIME: usize = 169;
+pub const SYSCALL_FORK: usize = 220;
+pub const SYSCALL_EXEC: usize = 221;
+pub const SYSCALL_WAITPID: usize = 260;
+pub const SYSCALL_SPAWN: usize = 400;
 pub const SYSCALL_MUNMAP: usize = 215;
 pub const SYSCALL_MMAP: usize = 222;
 pub const SYSCALL_TASK_INFO: usize = 410;
@@ -182,6 +186,9 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
             task_info.syscall_times = stat.syscall_times;
             task_info.time = stat.real_time() / time::CLOCKS_PER_MILLI_SEC;
             0
+        }
+        SYSCALL_FORK => {
+            todo!()
         }
         unknown => panic!("unknown syscall `{}`", unknown),
     }
