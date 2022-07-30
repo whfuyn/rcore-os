@@ -2,9 +2,44 @@ use crate::utils::BitField;
 use super::*;
 use frame_allocator::frame_alloc;
 use bitflags::bitflags;
+use spin::Mutex;
+use crate::config::*;
+use riscv::register::satp;
 
 const PAGE_TABLE_ENTRIES: usize = 1 << 9;
 // const PAGE_TABLE_SIZE: usize = PAGE_TABLE_ENTRIES * 8;
+
+static GLOBAL_PTES: Mutex<GlobalPtes> = Mutex::new(GlobalPtes{
+    kernel_pte_index: 0,
+    kernel_pte: PageTableEntry::zero(),
+
+    memory_pte_index: 0,
+    memory_pte: PageTableEntry::zero(),
+});
+
+struct GlobalPtes {
+    // kernel memory mapping
+    kernel_pte_index: usize,
+    kernel_pte: PageTableEntry,
+
+    // physical memory identity mapping
+    memory_pte_index: usize,
+    memory_pte: PageTableEntry,
+}
+
+pub fn init() {
+    let current_page_table = unsafe {
+        PPN(satp::read().ppn()).as_page_table()
+    };
+
+    let mut global_ptes = GLOBAL_PTES.lock();
+    global_ptes.kernel_pte_index = KERNEL_BASE_ADDRESS.vpn().level(2);
+    global_ptes.kernel_pte = *current_page_table.pte_of(KERNEL_BASE_ADDRESS, 2);
+
+    let memory_va = VirtAddr::new(QEMU_MEMORY_START);
+    global_ptes.memory_pte_index = memory_va.vpn().level(2);
+    global_ptes.memory_pte = *current_page_table.pte_of(memory_va, 2);
+}
 
 #[derive(Debug, Clone)]
 #[repr(C, align(4096))]
@@ -13,6 +48,14 @@ pub struct PageTable(pub [PageTableEntry; PAGE_TABLE_ENTRIES]);
 impl PageTable {
     pub const fn empty() -> Self {
         Self([PageTableEntry::zero(); PAGE_TABLE_ENTRIES])
+    }
+
+    pub fn add_globals(&mut self) {
+        let global_ptes = GLOBAL_PTES.lock();
+        unsafe {
+            self.set_entry(global_ptes.kernel_pte_index, global_ptes.kernel_pte);
+            self.set_entry(global_ptes.memory_pte_index, global_ptes.memory_pte);
+        }
     }
 
     pub unsafe fn set_entry(&mut self, index: usize, pte: PageTableEntry) {
@@ -50,6 +93,18 @@ impl PageTable {
         None
     }
 
+    pub fn pte_of(&self, va: VirtAddr, level: usize) -> &PageTableEntry {
+        let vpn = va.vpn();
+        let index = vpn.level(level);
+        &self.0[index]
+    }
+
+    pub unsafe fn pte_of_mut(&mut self, va: VirtAddr, level: usize) -> &mut PageTableEntry {
+        let vpn = va.vpn();
+        let index = vpn.level(level);
+        &mut self.0[index]
+    }
+
     pub fn clear(&mut self) {
         *self = Self::empty();
     }
@@ -63,13 +118,13 @@ impl PageTable {
             } else {
                 let frame = frame_alloc();
                 unsafe {
-                    (*frame.as_page_table()).clear();
+                    frame.as_page_table_mut().clear();
                 }
                 PageTableEntry::inner(frame, flags_at_level[2])
             }
         };
 
-        let sub_table = unsafe { &mut *root_pte.as_page_table() };
+        let sub_table = unsafe { root_pte.as_page_table_mut() };
         let sub_pte = {
             let index = vpn.level(1);
             if sub_table.0[index].is_valid() {
@@ -78,13 +133,13 @@ impl PageTable {
             } else {
                 let frame = frame_alloc();
                 unsafe {
-                    (*frame.as_page_table()).clear();
+                    frame.as_page_table_mut().clear();
                 }
                 PageTableEntry::inner(frame, flags_at_level[1])
             }
         };
 
-        let leaf_table = unsafe { &mut *sub_pte.as_page_table() };
+        let leaf_table = unsafe { sub_pte.as_page_table_mut() };
         let leaf_pte = PageTableEntry::leaf(ppn, flags_at_level[0]);
         unsafe {
             // Set entries in reverse order to avoid accessing uninit entries.
@@ -166,8 +221,12 @@ impl PageTableEntry {
         PPN(self.0.get_bits(10..=53))
     }
 
-    pub fn as_page_table(self) -> *mut PageTable {
+    pub unsafe fn as_page_table<'a>(self) -> &'a PageTable {
         self.ppn().as_page_table()
+    }
+
+    pub unsafe fn as_page_table_mut<'a>(self) -> &'a mut PageTable {
+        self.ppn().as_page_table_mut()
     }
 }
 

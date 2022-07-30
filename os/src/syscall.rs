@@ -127,9 +127,6 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
             }
 
             unsafe {
-                // use riscv::register::satp;
-                // satp::set(satp::Mode::Sv39, addr_space.asid, addr_space.page_table.0);
-                // riscv::register::sstatus::set_sum();
                 riscv::asm::sfence_vma_all();
             }
 
@@ -171,6 +168,7 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
             unsafe {
                 riscv::asm::sfence_vma_all();
             }
+
             0
         }
         SYSCALL_TASK_INFO => {

@@ -30,15 +30,6 @@ extern "C" {
 }
 
 
-// static KERNEL_STACK: [KernelStack ; MAX_TASK_NUM]= {
-//     const KERNEL_STACK: KernelStack = KernelStack::new();
-//     [KERNEL_STACK; MAX_TASK_NUM]
-// };
-// static USER_STACK: [UserStack; MAX_TASK_NUM] = {
-//     const USER_STACK: UserStack = UserStack::new();
-//     [USER_STACK; MAX_TASK_NUM]
-// };
-
 lazy_static! {
     pub static ref TASK_MANAGER: Mutex<TaskManager> = Mutex::new(unsafe { TaskManager::new() });
 }
@@ -52,7 +43,6 @@ pub enum TaskStatus {
     Running = 2,
     Exited = 3,
 }
-
 
 #[derive(Debug, Clone, Default)]
 #[repr(C)]
@@ -136,36 +126,6 @@ impl TaskManager {
             core::slice::from_raw_parts(table, num_app + 1)
         };
 
-        // let mut tcbs: Vec<TaskControlBlock> = Vec::new();
-        // let mut addr_spaces: Vec<AddressSpace> = Vec::new();
-        // let mut stats: Vec<TaskStat> = Vec::new();
-
-        // for i in 0..num_app {
-        //     let mut addr_space = AddressSpace::new(i + 2);
-
-        //     // TODO: put ustack in lower addr
-        //     let (ustack_vpn, _) = addr_space.alloc_page();
-        //     let usp = ustack_vpn.as_va().0 + PAGE_SIZE;
-
-        //     let (kstack_vpn, kstack_ppn) = addr_space.alloc_kernel_page();
-        //     let kstack =  &mut *(kstack_ppn.as_pa().0 as *mut KernelStack);
-        //     let task_init_trap_cx = TrapContext::app_init_context(
-        //         APP_BASE_ADDR as usize, usp
-        //     );
-        //     kstack.push_context(task_init_trap_cx);
-        //     let ksp = kstack_vpn.as_va().0 + PAGE_SIZE - core::mem::size_of::<TrapContext>();
-
-        //     let mut tcb = TaskControlBlock::default();
-        //     tcb.cx.sp = ksp;
-        //     tcb.cx.ra = __restore as usize;
-        //     tcb.cx.satp = addr_space.satp();
-
-
-        //     tcbs.push(tcb);
-        //     addr_spaces.push(addr_space);
-        //     stats.push(TaskStat::default());
-        // }
-
         let mut task_mgr = Self {
             app_starts,
             num_app,
@@ -243,7 +203,6 @@ impl TaskManager {
         let kstack =  &mut *(kstack_ppn.as_pa().0 as *mut KernelStack);
         let task_init_trap_cx = TrapContext::app_init_context(
             entry_point as usize, usp
-            // APP_BASE_ADDR as usize, usp
         );
         kstack.push_context(task_init_trap_cx);
         let ksp = kstack_vpn.as_va().0 + PAGE_SIZE - core::mem::size_of::<TrapContext>();

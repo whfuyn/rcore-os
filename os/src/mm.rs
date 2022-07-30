@@ -6,11 +6,11 @@ pub mod address_space;
 use crate::utils::BitField;
 pub use page_table::*;
 
-pub fn init() {
+pub fn init(frame_start: PPN, frame_end: PPN) {
     heap_allocator::init();
-    // frame_allocator::init(frame_start, frame_end);
+    frame_allocator::init(frame_start, frame_end);
+    page_table::init();
 }
-
 
 #[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
@@ -88,8 +88,12 @@ impl PPN {
         }
     }
 
-    pub fn as_page_table(self) -> *mut PageTable {
-        (self.0 << 12) as *mut PageTable
+    pub unsafe fn as_page_table<'a>(self) -> &'a PageTable {
+        &*((self.0 << 12) as *const PageTable)
+    }
+
+    pub unsafe fn as_page_table_mut<'a>(self) -> &'a mut PageTable {
+        &mut *((self.0 << 12) as *mut PageTable)
     }
 
     pub fn as_pa(self) -> PhysAddr {
