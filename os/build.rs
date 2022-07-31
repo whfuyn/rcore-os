@@ -59,36 +59,6 @@ fn main() {
     });
 
     let user_lib_out_dir = "../user-lib/target/riscv64gc-unknown-none-elf/release";
-    // let mut stripped_bin_paths: Vec<String> = bins
-    //     .iter()
-    //     .map(|bin| {
-    //         let bin_path = format!("{user_lib_out_dir}/{bin}");
-    //         let stripped_bin_path = format!("{bin_path}.bin");
-
-    //         let strip_user_lib_res = Command::new("rust-objcopy")
-    //             .args([
-    //                 "--binary-architecture=riscv64",
-    //                 "--strip-all",
-    //                 "-O",
-    //                 "binary",
-    //                 &bin_path,
-    //                 &stripped_bin_path,
-    //             ])
-    //             .output();
-
-    //         match strip_user_lib_res {
-    //             Ok(output) if output.status.success() => (),
-    //             Ok(output) => {
-    //                 panic!("stderr: {}", String::from_utf8_lossy(&output.stderr));
-    //             }
-    //             Err(e) => panic!("failed to run strip cmd for `{bin_path}`: {e}"),
-    //         }
-    //         stripped_bin_path
-    //     })
-    //     .collect();
-
-    // bins.push("ch2b_hello_world".into());
-    // stripped_bin_paths.push("../ch2b_hello_world.bin".into());
     let elf_paths = bins.iter()
         .map(|b| format!("{user_lib_out_dir}/{b}"))
         .collect();
@@ -101,8 +71,8 @@ fn build_link_app_asm(bins: Vec<String>, elf_paths: Vec<String>) -> String {
     let mut link_app_asm = format!(
 "    .p2align 3
     .section .data
-    .global _app_info_table
-_app_info_table:
+    .global _num_app
+_num_app:
     .quad {}\
 ",
         bins.len()
@@ -123,6 +93,20 @@ _app_info_table:
             );
             link_app_asm.push_str(&end_entry);
         }
+    }
+
+    link_app_asm.push_str(
+r#"
+    .global _app_names
+_app_names:
+"#
+    );
+    for b in &bins {
+        let entry = format!(
+r#"    .string "{b}"
+"#
+        );
+        link_app_asm.push_str(&entry);
     }
 
     for (i, elf_path) in elf_paths.iter().enumerate() {
