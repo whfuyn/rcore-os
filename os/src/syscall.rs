@@ -1,9 +1,12 @@
+use alloc::sync::Arc;
+
 use crate::print;
 // use crate::println;
 use crate::task::run_next_task;
 use crate::task::exit_and_run_next;
 use crate::task::record_syscall;
 use crate::task::TaskStatus;
+use crate::task::TaskControlBlock;
 use crate::time;
 use crate::mm::*;
 use crate::task::PROCESSOR;
@@ -11,7 +14,7 @@ use crate::sbi::console_getchar;
 use core::ffi::CStr;
 use crate::task::get_app_data;
 // use crate::task::TaskControlBlock;
-// use crate::task::TASK_MANAGER;
+use crate::task::TASK_MANAGER;
 
 pub const FD_STDIN: usize = 0;
 pub const FD_STDOUT: usize = 1;
@@ -142,6 +145,29 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
             if let Some(found) = found {
                 current_inner.children.remove(found);
             }
+            ret
+        }
+        SYSCALL_SPAWN => {
+            let current_task = PROCESSOR.lock().current().expect("missing current").clone();
+            let mut current_inner = current_task.lock();
+
+            let elf_name: &'static str = unsafe {
+                CStr::from_ptr(args[0] as *const i8).to_str().expect("invalid app name")
+            };
+            let elf_data = match get_app_data(elf_name) {
+                Some(elf_data) => elf_data,
+                None => return -1,
+            };
+
+            let child_task = TaskControlBlock::load_from_elf(elf_data, Some(Arc::downgrade(&current_task)));
+            current_inner.children.push(child_task.clone());
+
+            let ret = child_task.pid.0 as isize;
+
+            drop(current_inner);
+            drop(current_task);
+            TASK_MANAGER.lock().add(child_task);
+
             ret
         }
         SYSCALL_GET_TIME => {
