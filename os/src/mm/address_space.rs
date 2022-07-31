@@ -260,7 +260,7 @@ impl AddressSpace {
                     let new_leaf_page = new.alloc_frame();
                     unsafe {
                         // Use the identity mapping of physical memory
-                        crate::println!("leaf_page 0x{:x}\nnew_leaf_page 0x{:x}", leaf_page.as_pa().0, new_leaf_page.as_pa().0);
+                        // crate::println!("leaf_page 0x{:x}\nnew_leaf_page 0x{:x}", leaf_page.as_pa().0, new_leaf_page.as_pa().0);
                         core::ptr::copy_nonoverlapping(
                             leaf_page.as_pa().0 as *const u8, 
                             new_leaf_page.as_pa().0 as *mut u8,
@@ -271,7 +271,7 @@ impl AddressSpace {
                 }
             }
         }
-        crate::println!("dup ok");
+        // crate::println!("dup ok");
 
         new
     }

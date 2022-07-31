@@ -37,6 +37,7 @@ impl PidAllocator {
     }
 
     fn free(&mut self, pid: usize) {
+        // crate::println!("recycle pid: {}", pid);
         self.recycled.push(pid);
     }
 }

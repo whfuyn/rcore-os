@@ -80,7 +80,6 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
             1
         }
         SYSCALL_EXIT => {
-            crate::println!("call sys exit");
             let exit_code = args[0] as i32;
             exit_and_run_next(exit_code);
             0
@@ -146,6 +145,7 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
             }
             if let Some(found) = found {
                 let exit_child = current_inner.children.remove(found);
+                // crate::println!("strong: {} weak: {}", Arc::strong_count(&exit_child), Arc::weak_count(&exit_child));
                 unsafe {
                     *exit_code_ptr = exit_child.lock().exit_code;
                 }

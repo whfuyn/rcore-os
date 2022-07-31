@@ -15,8 +15,8 @@ impl Processor {
         self.current.take()
     }
 
-    pub fn current(&self) -> Option<Arc<TaskControlBlock>> {
-        self.current.as_ref().map(Arc::clone)
+    pub fn current(&self) -> Option<&Arc<TaskControlBlock>> {
+        self.current.as_ref()
     }
 
     pub fn set_current(&mut self, task: Arc<TaskControlBlock>) -> Option<Arc<TaskControlBlock>> {

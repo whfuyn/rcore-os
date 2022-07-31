@@ -45,9 +45,7 @@ extern "C" {
 lazy_static! {
     pub static ref TASK_MANAGER: Mutex<TaskManager> = Mutex::new(TaskManager::new());
     pub static ref INITPROC: Arc<TaskControlBlock> = {
-        crate::println!("get initproc");
         let initproc_elf = get_app_data("initproc").expect("missing initproc");
-        crate::println!("get initproc done");
         TaskControlBlock::load_from_elf(initproc_elf, None)
     };
 }
@@ -203,8 +201,9 @@ impl TaskControlBlock {
         self.lock().status == TaskStatus::Ready
     }
 
-    pub fn exec(&self, elf_data: &[u8]) {
+    pub fn exec(self: Arc<Self>, elf_data: &[u8]) {
         let mut inner = self.lock();
+        inner.schedule_end();
 
         let addr_space = AddressSpace::from_elf(elf_data, self.pid.0);
         inner.cx.sp = TRAP_CX_VA.0;
@@ -215,6 +214,7 @@ impl TaskControlBlock {
         let cx = inner.schedule_begin();
 
         drop(inner);
+        drop(self);
         let mut unused = TaskContext::default();
         unsafe {
             __switch(&mut unused, cx);
@@ -330,7 +330,6 @@ pub fn run_initproc() {
 }
 
 pub fn exit_and_run_next(exit_code: i32) {
-    crate::println!("exiting");
     let processor = PROCESSOR.lock();
     let current_task = processor.current().expect("missing current task");
     let mut inner = current_task.lock();
@@ -348,6 +347,7 @@ pub fn exit_and_run_next(exit_code: i32) {
 
     drop(inner);
     drop(initproc_inner);
+    drop(initproc);
     drop(processor);
 
     run_next_task();
@@ -362,6 +362,8 @@ pub fn run_next_task() {
     let mut task_mgr = TASK_MANAGER.lock();
     if current_task.is_ready() {
         task_mgr.add(current_task);
+    } else {
+        drop(current_task);
     }
     let next_task = task_mgr.fetch().unwrap();
     let next_cx = next_task.inner.lock().schedule_begin();

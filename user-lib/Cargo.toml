@@ -62,38 +62,38 @@ debug = true
 # name = "test-task-info"
 # path = "src/bin/ch3_taskinfo.rs"
 
-# [[bin]]
-# name = "hello-world"
-# path = "src/bin/00hello_world.rs"
+[[bin]]
+name = "hello-world"
+path = "src/bin/00hello_world.rs"
 
-# [[bin]]
-# name = "mmap0"
-# path = "src/bin/ch4_mmap0.rs"
+[[bin]]
+name = "mmap0"
+path = "src/bin/ch4_mmap0.rs"
 
-# [[bin]]
-# name = "mmap1"
-# path = "src/bin/ch4_mmap1.rs"
+[[bin]]
+name = "mmap1"
+path = "src/bin/ch4_mmap1.rs"
 
-# [[bin]]
-# name = "mmap2"
-# path = "src/bin/ch4_mmap2.rs"
+[[bin]]
+name = "mmap2"
+path = "src/bin/ch4_mmap2.rs"
 
-# [[bin]]
-# name = "mmap3"
-# path = "src/bin/ch4_mmap3.rs"
+[[bin]]
+name = "mmap3"
+path = "src/bin/ch4_mmap3.rs"
 
-# [[bin]]
-# name = "unmap"
-# path = "src/bin/ch4_unmap.rs"
+[[bin]]
+name = "unmap"
+path = "src/bin/ch4_unmap.rs"
 
-# [[bin]]
-# name = "unmap2"
-# path = "src/bin/ch4_unmap2.rs"
+[[bin]]
+name = "unmap2"
+path = "src/bin/ch4_unmap2.rs"
 
 [[bin]]
 name = "initproc"
 path = "src/bin/initproc.rs"
 
 [[bin]]
-name = "user-shell"
+name = "user_shell"
 path = "src/bin/user_shell.rs"
