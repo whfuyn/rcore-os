@@ -1,5 +1,5 @@
-use constants::*;
 use core::arch::asm;
+use constants::*;
 
 #[allow(unused)]
 mod constants {
@@ -28,6 +28,10 @@ fn sbi_call(which: usize, arg0: usize, arg1: usize, arg2: usize) -> usize {
         );
     }
     ret
+}
+
+pub fn console_getchar() -> usize {
+    sbi_call(SBI_CONSOLE_GETCHAR, 0, 0, 0)
 }
 
 pub fn console_putchar(c: usize) {

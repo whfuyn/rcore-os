@@ -39,7 +39,7 @@ pub extern "C" fn rust_main(kernel_pa: PhysAddr, kernel_size: usize) {
     println!("hello from os");
     println!("kernel pa: 0x{:x} 0x{:x}", kernel_pa.0, kernel_size);
     println!("satp: 0x{:x}", riscv::register::satp::read().bits());
-    task::run_first_task();
+    task::run_initproc();
 
     sbi::shutdown();
 }

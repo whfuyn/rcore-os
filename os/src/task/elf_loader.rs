@@ -24,7 +24,7 @@ struct ElfLoader {
 
 impl ElfLoader {
     unsafe fn new() -> Self {
-        let elfs = BTreeMap::new();
+        let mut elfs = BTreeMap::new();
 
         let ptr = _num_app as *const usize;
         let num_app = *ptr;

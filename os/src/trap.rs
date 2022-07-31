@@ -53,12 +53,15 @@ pub extern "C" fn trap_handler(cx: &mut TrapContext) -> &mut TrapContext {
             //     println!("decoded: {}", *(translated as *const u8));
 
             // }
-            exit_and_run_next();
+
+            // TODO: custom exit code
+            exit_and_run_next(-1);
         }
         Trap::Exception(Exception::IllegalInstruction) => {
             println!("[kernel] IllegalInstruction in application, kernel killed it.");
             println!("[kernel] stval: 0x{:x}, sepc: 0x{:x}", stval, sepc::read());
-            exit_and_run_next();
+            // TODO: custom exit code
+            exit_and_run_next(-1);
         }
         unknown => {
             println!("[kernel] stval: 0x{:x}, sepc: 0x{:x}", stval, sepc::read());

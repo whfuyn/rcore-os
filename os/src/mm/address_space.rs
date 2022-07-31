@@ -7,6 +7,7 @@ use crate::{
 };
 // use crate::println;
 
+#[derive(Debug)]
 pub struct AddressSpace {
     asid: usize,
     brk: VPN,

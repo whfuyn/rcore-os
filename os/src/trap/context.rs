@@ -1,4 +1,6 @@
 use riscv::register::sstatus::{self, Sstatus, SPP};
+use crate::config::KERNEL_STACK_VA;
+use crate::config::PAGE_SIZE;
 
 #[repr(C)]
 pub struct TrapContext {
@@ -29,4 +31,9 @@ impl TrapContext {
 
         cx
     }
+}
+
+pub fn get_current_trap_cx() -> *mut TrapContext {
+    KERNEL_STACK_VA.add(PAGE_SIZE - core::mem::size_of::<TrapContext>()).0
+        as *mut TrapContext
 }

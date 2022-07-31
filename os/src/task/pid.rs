@@ -3,10 +3,11 @@ use spin::Mutex;
 
 static PID_ALLOCATOR: Mutex<PidAllocator> = Mutex::new(PidAllocator::new());
 
-fn pid_alloc() -> Pid {
+pub fn pid_alloc() -> Pid {
     PID_ALLOCATOR.lock().alloc()
 }
 
+#[derive(Debug)]
 pub struct Pid(pub usize);
 
 impl Drop for Pid {

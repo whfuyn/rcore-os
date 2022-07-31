@@ -3,16 +3,19 @@ use crate::print;
 use crate::task::run_next_task;
 use crate::task::exit_and_run_next;
 use crate::task::record_syscall;
-use crate::task::TASK_MANAGER;
 use crate::task::TaskStatus;
 use crate::time;
 use crate::mm::*;
+use crate::task::PROCESSOR;
+use crate::sbi::console_getchar;
 
-pub const STDOUT: usize = 1;
+pub const FD_STDIN: usize = 0;
+pub const FD_STDOUT: usize = 1;
 pub const MAX_SYSCALL_NUM: usize = 500;
 
-pub const SYSCALL_EXIT: usize = 93;
+pub const SYSCALL_READ: usize = 63;
 pub const SYSCALL_WRITE: usize = 64;
+pub const SYSCALL_EXIT: usize = 93;
 pub const SYSCALL_YIELD: usize = 124;
 pub const SYSCALL_GET_TIME: usize = 169;
 pub const SYSCALL_FORK: usize = 220;
@@ -43,13 +46,40 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
     record_syscall(id);
 
     match id {
+        SYSCALL_READ => {
+            let fd = args[0];
+            let buffer = args[1] as *mut u8;
+            let len = args[2];
+
+            if fd != FD_STDIN {
+                panic!("unsupported fd in syscall read");
+            }
+            assert_eq!(len, 1, "Only support len = 1 in sys_read!");
+            let mut c: usize;
+            loop {
+                c = console_getchar();
+                if c == 0 {
+                    run_next_task();
+                    continue;
+                } else {
+                    break;
+                }
+            }
+            // We don't need to translate the buffer, since we didn't switch satp
+            unsafe {
+                buffer.write_volatile(c as u8);
+            }
+
+            1
+        }
         SYSCALL_EXIT => {
-            exit_and_run_next();
+            let exit_code = args[0] as i32;
+            exit_and_run_next(exit_code);
             0
         }
         SYSCALL_WRITE => {
             let fd = args[0];
-            if fd != STDOUT {
+            if fd != FD_STDOUT {
                 panic!("unsupported fd in syscall write");
             }
 
@@ -94,9 +124,10 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
                 return -1;
             }
 
-            let mut task_mgr = TASK_MANAGER.lock();
-            let current_task = task_mgr.current_task();
-            let addr_space = &mut task_mgr.addr_spaces[current_task];
+            let processor = PROCESSOR.lock();
+            let current_task = processor.current().expect("missing current");
+            let mut current_inner = current_task.lock();
+            let addr_space = &mut current_inner.addr_space;
 
             let mut checked_len = 0;
             while checked_len < len {
@@ -143,9 +174,10 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
                 return -1;
             }
 
-            let mut task_mgr = TASK_MANAGER.lock();
-            let current_task = task_mgr.current_task();
-            let addr_space = &mut task_mgr.addr_spaces[current_task];
+            let processor = PROCESSOR.lock();
+            let current_task = processor.current().expect("missing current");
+            let mut current_inner = current_task.lock();
+            let addr_space = &mut current_inner.addr_space;
 
             let mut checked_len = 0;
             while checked_len < len {
@@ -163,6 +195,7 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
 
             let mut unmapped_len = 0;
             while unmapped_len < len {
+                // TODO: free frame
                 let unmapped_va = VirtAddr::new(start.0 + unmapped_len);
                 let frame = addr_space.translate(unmapped_va).unwrap().ppn();
                 addr_space.build_mapping(unmapped_va.vpn(), frame, flags_at_level);
@@ -178,13 +211,15 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
         SYSCALL_TASK_INFO => {
             let task_info = unsafe { &mut *(args[0] as *mut TaskInfo) };
 
-            let task_mgr = TASK_MANAGER.lock();
-            let status = task_mgr.current_tcb().status;
-            let stat = task_mgr.current_stat();
+            let processor = PROCESSOR.lock();
+            let current_task = processor.current().expect("missing current");
+            let current_inner = current_task.lock();
+            let stat = &current_inner.stats;
 
-            task_info.status = status;
+            task_info.status = current_inner.status;
             task_info.syscall_times = stat.syscall_times;
             task_info.time = stat.real_time() / time::CLOCKS_PER_MILLI_SEC;
+
             0
         }
         SYSCALL_FORK => {
