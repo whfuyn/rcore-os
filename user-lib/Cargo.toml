@@ -6,6 +6,11 @@ edition = "2021"
 [dependencies]
 riscv = "0.8"
 buddy_system_allocator = "0.8"
+# buddy_system_allocator = "0.6"
+bitflags = "1.2.1"
+spin = "0.9"
+lock_api = "=0.4.6"
+lazy_static = { version = "1.4.0", features = ["spin_no_std"] }
 
 [profile.release]
 debug = true
@@ -62,38 +67,122 @@ debug = true
 # name = "test-task-info"
 # path = "src/bin/ch3_taskinfo.rs"
 
-[[bin]]
-name = "hello-world"
-path = "src/bin/00hello_world.rs"
+# [[bin]]
+# name = "hello-world"
+# path = "src/bin/00hello_world.rs"
+
+# [[bin]]
+# name = "mmap0"
+# path = "src/bin/ch4_mmap0.rs"
+
+# [[bin]]
+# name = "mmap1"
+# path = "src/bin/ch4_mmap1.rs"
+
+# [[bin]]
+# name = "mmap2"
+# path = "src/bin/ch4_mmap2.rs"
+
+# [[bin]]
+# name = "mmap3"
+# path = "src/bin/ch4_mmap3.rs"
+
+# [[bin]]
+# name = "unmap"
+# path = "src/bin/ch4_unmap.rs"
+
+# [[bin]]
+# name = "unmap2"
+# path = "src/bin/ch4_unmap2.rs"
+
+# [[bin]]
+# name = "initproc"
+# path = "src/bin/initproc.rs"
+
+# [[bin]]
+# name = "user_shell"
+# path = "src/bin/user_shell.rs"
 
 [[bin]]
-name = "mmap0"
-path = "src/bin/ch4_mmap0.rs"
+name = "ch5_exit0"
+path = "src/bin/ch5_exit0.rs"
 
 [[bin]]
-name = "mmap1"
-path = "src/bin/ch4_mmap1.rs"
+name = "ch5_exit1"
+path = "src/bin/ch5_exit1.rs"
 
 [[bin]]
-name = "mmap2"
-path = "src/bin/ch4_mmap2.rs"
+name = "ch5_getpid"
+path = "src/bin/ch5_getpid.rs"
 
 [[bin]]
-name = "mmap3"
-path = "src/bin/ch4_mmap3.rs"
+name = "ch5_setprio"
+path = "src/bin/ch5_setprio.rs"
 
 [[bin]]
-name = "unmap"
-path = "src/bin/ch4_unmap.rs"
+name = "ch5_spawn0"
+path = "src/bin/ch5_spawn0.rs"
 
 [[bin]]
-name = "unmap2"
-path = "src/bin/ch4_unmap2.rs"
+name = "ch5_spawn1"
+path = "src/bin/ch5_spawn1.rs"
 
 [[bin]]
-name = "initproc"
-path = "src/bin/initproc.rs"
+name = "ch5_stride"
+path = "src/bin/ch5_stride.rs"
 
 [[bin]]
-name = "user_shell"
-path = "src/bin/user_shell.rs"
+name = "ch5_stride0"
+path = "src/bin/ch5_stride0.rs"
+
+[[bin]]
+name = "ch5_stride1"
+path = "src/bin/ch5_stride1.rs"
+
+[[bin]]
+name = "ch5_stride2"
+path = "src/bin/ch5_stride2.rs"
+
+[[bin]]
+name = "ch5_stride3"
+path = "src/bin/ch5_stride3.rs"
+
+[[bin]]
+name = "ch5_stride4"
+path = "src/bin/ch5_stride4.rs"
+
+[[bin]]
+name = "ch5_stride5"
+path = "src/bin/ch5_stride5.rs"
+
+[[bin]]
+name = "ch5_usertest"
+path = "src/bin/ch5_usertest.rs"
+
+[[bin]]
+name = "ch5b_exit"
+path = "src/bin/ch5b_exit.rs"
+
+[[bin]]
+name = "ch5b_forktest_simple"
+path = "src/bin/ch5b_forktest_simple.rs"
+
+[[bin]]
+name = "ch5b_forktest"
+path = "src/bin/ch5b_forktest.rs"
+
+[[bin]]
+name = "ch5b_forktest2"
+path = "src/bin/ch5b_forktest2.rs"
+
+[[bin]]
+name = "ch5b_forktree"
+path = "src/bin/ch5b_forktree.rs"
+
+[[bin]]
+name = "ch5b_initproc"
+path = "src/bin/ch5b_initproc.rs"
+
+[[bin]]
+name = "ch5b_user_shell"
+path = "src/bin/ch5b_user_shell.rs"

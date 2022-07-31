@@ -3,11 +3,15 @@
 #![feature(format_args_nl)]
 #![feature(alloc_error_handler)]
 
+extern crate alloc;
+
 pub mod console;
 pub mod lang_items;
 pub mod syscall;
 
 pub use syscall::*;
+pub use console::flush;
+
 use buddy_system_allocator::LockedHeap;
 
 // const MICRO_PER_SEC: usize = 1_000_000;
@@ -137,8 +141,8 @@ pub fn fork() -> isize {
     sys_fork()
 }
 
-pub fn exec(path: &str) -> isize {
-    sys_exec(path)
+pub fn exec(path: &str, args: &[*const u8]) -> isize {
+    sys_exec(path, args)
 }
 
 pub fn wait(exit_code: &mut i32) -> isize {
@@ -163,4 +167,20 @@ pub fn waitpid(pid: usize, exit_code: &mut i32) -> isize {
             exit_pid => return exit_pid,
         }
     }
+}
+
+pub fn set_priority(prio: isize) -> isize {
+    sys_set_priority(prio)
+}
+
+pub fn exit(exit_code: i32) -> ! {
+    sys_exit(exit_code);
+}
+
+pub fn spawn(path: &str) -> isize {
+    sys_spawn(path)
+}
+
+pub fn getpid() -> isize {
+    sys_getpid()
 }

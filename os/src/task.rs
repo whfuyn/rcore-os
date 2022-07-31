@@ -45,7 +45,7 @@ extern "C" {
 lazy_static! {
     pub static ref TASK_MANAGER: Mutex<TaskManager> = Mutex::new(TaskManager::new());
     pub static ref INITPROC: Arc<TaskControlBlock> = {
-        let initproc_elf = get_app_data("initproc").expect("missing initproc");
+        let initproc_elf = get_app_data("ch5b_initproc").expect("missing initproc");
         TaskControlBlock::load_from_elf(initproc_elf, None)
     };
 }
@@ -131,7 +131,7 @@ pub struct TaskControlBlockInner {
     pub exit_code: i32,
 
     // Stride scheduling
-    priority: u64,
+    pub priority: u64,
     pass: u64,
 }
 
