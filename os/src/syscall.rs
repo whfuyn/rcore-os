@@ -27,11 +27,13 @@ pub const SYSCALL_YIELD: usize = 124;
 pub const SYSCALL_GET_TIME: usize = 169;
 pub const SYSCALL_FORK: usize = 220;
 pub const SYSCALL_EXEC: usize = 221;
+pub const SYSCALL_GETPID: usize = 172;
 pub const SYSCALL_WAITPID: usize = 260;
 pub const SYSCALL_SPAWN: usize = 400;
 pub const SYSCALL_MUNMAP: usize = 215;
 pub const SYSCALL_MMAP: usize = 222;
 pub const SYSCALL_TASK_INFO: usize = 410;
+pub const SYSCALL_SET_PRIORITY: usize = 140;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -122,6 +124,10 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
         SYSCALL_FORK => {
             let current_task = PROCESSOR.lock().current().expect("missing current").clone();
             current_task.fork() as isize
+        }
+        SYSCALL_GETPID => {
+            let current_task = PROCESSOR.lock().current().expect("missing current").clone();
+            current_task.pid.0 as isize
         }
         SYSCALL_WAITPID => {
             let pid = args[0] as isize; 
@@ -299,6 +305,17 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
             task_info.time = stat.real_time() / time::CLOCKS_PER_MILLI_SEC;
 
             0
+        }
+        SYSCALL_SET_PRIORITY => {
+            let priority = args[0] as isize;
+            if priority < 2 {
+                return -1;
+            }
+
+            let current_task = PROCESSOR.lock().current().expect("missing current").clone();
+            current_task.lock().priority = priority as u64;
+
+            priority
         }
         unknown => panic!("unknown syscall `{}`", unknown),
     }
