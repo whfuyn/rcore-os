@@ -1,7 +1,8 @@
 use core::cell::SyncUnsafeCell;
 use crate::trap::TrapContext;
+use crate::config::*;
 
-const KERNEL_STACK_SIZE: usize = 4096;
+// const KERNEL_STACK_SIZE: usize = 4096;
 // const USER_STACK_SIZE: usize = 4096;
 
 #[repr(C, align(4096))]

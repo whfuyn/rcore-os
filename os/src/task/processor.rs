@@ -11,6 +11,7 @@ pub struct Processor {
 
 impl Processor {
     pub fn take_current(&mut self) -> Option<Arc<TaskControlBlock>> {
+        // crate::println!("current taken");
         self.current.take()
     }
 
@@ -19,6 +20,7 @@ impl Processor {
     }
 
     pub fn set_current(&mut self, task: Arc<TaskControlBlock>) -> Option<Arc<TaskControlBlock>> {
+        // crate::println!("current set");
         self.current.replace(task)
     }
 }

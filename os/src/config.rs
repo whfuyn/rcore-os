@@ -6,6 +6,9 @@ pub const KERNEL_BASE_ADDRESS: VirtAddr = unsafe {
 };
 
 pub const PAGE_SIZE: usize = 4096;
+pub const USER_STACK_SIZE: usize = 2 * 4096;
+pub const KERNEL_STACK_SIZE: usize = 2 * 4096;
+
 pub const QEMU_MEMORY_START: usize = 0x80000000;
 pub const QEMU_MEMORY_END: usize = 0x88000000;
 

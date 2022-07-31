@@ -1,9 +1,9 @@
 use riscv::register::sstatus::{self, Sstatus, SPP};
 use crate::config::KERNEL_STACK_VA;
-use crate::config::PAGE_SIZE;
+use crate::config::KERNEL_STACK_SIZE;
 use crate::mm::VirtAddr;
 
-pub const TRAP_CX_VA: VirtAddr = KERNEL_STACK_VA.add(PAGE_SIZE - core::mem::size_of::<TrapContext>());
+pub const TRAP_CX_VA: VirtAddr = KERNEL_STACK_VA.add(KERNEL_STACK_SIZE - core::mem::size_of::<TrapContext>());
 
 #[repr(C)]
 pub struct TrapContext {

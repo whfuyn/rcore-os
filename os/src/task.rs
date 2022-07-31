@@ -17,6 +17,7 @@ use pid::{ Pid, pid_alloc };
 pub use processor::PROCESSOR;
 use crate::trap::TRAP_CX_VA;
 use crate::trap::TrapContext;
+use crate::config::*;
 
 pub use stack::KernelStack;
 use crate::sbi;
@@ -44,7 +45,9 @@ extern "C" {
 lazy_static! {
     pub static ref TASK_MANAGER: Mutex<TaskManager> = Mutex::new(TaskManager::new());
     pub static ref INITPROC: Arc<TaskControlBlock> = {
+        crate::println!("get initproc");
         let initproc_elf = get_app_data("initproc").expect("missing initproc");
+        crate::println!("get initproc done");
         TaskControlBlock::load_from_elf(initproc_elf, None)
     };
 }
@@ -125,9 +128,9 @@ pub struct TaskControlBlockInner {
     pub addr_space: AddressSpace,
     pub stats: TaskStat,
 
-    children: Vec<Arc<TaskControlBlock>>,
+    pub children: Vec<Arc<TaskControlBlock>>,
     pub parent: Option<Weak<TaskControlBlock>>,
-    exit_code: i32,
+    pub exit_code: i32,
 
     // Stride scheduling
     priority: u64,
@@ -157,22 +160,23 @@ impl TaskControlBlockInner {
 
 #[derive(Debug)]
 pub struct TaskControlBlock {
-    pid: Pid,
+    pub pid: Pid,
     inner: Mutex<TaskControlBlockInner>,
 }
 
 impl TaskControlBlock {
     pub fn load_from_elf(elf_data: &[u8], parent: Option<Weak<TaskControlBlock>>) -> Arc<Self> {
         let pid = pid_alloc();
-        let (addr_space, ksp) = AddressSpace::from_elf(elf_data, pid.0);
+        let addr_space = AddressSpace::from_elf(elf_data, pid.0);
         let mut cx = TaskContext::default();
-        cx.sp = ksp;
+        cx.sp = TRAP_CX_VA.0;
         cx.ra = __restore as usize;
         cx.satp = addr_space.satp();
+        // crate::println!("satp: 0x{:x}", cx.satp);
 
         let inner = TaskControlBlockInner {
             status: TaskStatus::Ready,
-            cx: TaskContext::default(),
+            cx,
             addr_space,
             stats: TaskStat::default(),
             children: Vec::new(),
@@ -191,11 +195,19 @@ impl TaskControlBlock {
         self.inner.lock()
     }
 
+    pub fn is_zombie(&self) -> bool {
+        self.lock().status == TaskStatus::Zombie
+    }
+
+    pub fn is_ready(&self) -> bool {
+        self.lock().status == TaskStatus::Ready
+    }
+
     pub fn exec(&self, elf_data: &[u8]) {
         let mut inner = self.lock();
 
-        let (addr_space, ksp) = AddressSpace::from_elf(elf_data, self.pid.0);
-        inner.cx.sp = ksp;
+        let addr_space = AddressSpace::from_elf(elf_data, self.pid.0);
+        inner.cx.sp = TRAP_CX_VA.0;
         inner.cx.ra = __restore as usize;
         inner.cx.satp = addr_space.satp();
         inner.addr_space = addr_space;
@@ -294,6 +306,7 @@ pub fn set_next_trigger() {
     const TICKS_PER_SEC: usize = 100;
     let current_time = time::get_time();
     let delta = time::CLOCK_FREQ / TICKS_PER_SEC;
+    // crate::println!("set timer to {}", current_time + delta);
     sbi::set_timer(current_time + delta);
 }
 
@@ -317,8 +330,9 @@ pub fn run_initproc() {
 }
 
 pub fn exit_and_run_next(exit_code: i32) {
-    let mut processor = PROCESSOR.lock();
-    let current_task = processor.take_current().expect("missing current task");
+    crate::println!("exiting");
+    let processor = PROCESSOR.lock();
+    let current_task = processor.current().expect("missing current task");
     let mut inner = current_task.lock();
     inner.status = TaskStatus::Zombie;
     inner.exit_code = exit_code;
@@ -340,12 +354,15 @@ pub fn exit_and_run_next(exit_code: i32) {
 }
 
 pub fn run_next_task() {
+    // crate::println!("run next");
     let mut processor = PROCESSOR.lock();
     let current_task = processor.take_current().expect("missing current task");
     let current_cx = current_task.inner.lock().schedule_end();
 
     let mut task_mgr = TASK_MANAGER.lock();
-    task_mgr.add(current_task);
+    if current_task.is_ready() {
+        task_mgr.add(current_task);
+    }
     let next_task = task_mgr.fetch().unwrap();
     let next_cx = next_task.inner.lock().schedule_begin();
 

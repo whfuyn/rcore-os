@@ -1,34 +1,39 @@
-use crate::syscall::sys_write;
-use core::fmt;
+use core::fmt::{self, Write};
+
+const STDIN: usize = 0;
+const STDOUT: usize = 1;
+
+use super::{read, write};
 
 struct Stdout;
 
-impl fmt::Write for Stdout {
+impl Write for Stdout {
     fn write_str(&mut self, s: &str) -> fmt::Result {
-        const STDOUT: usize = 1;
-        sys_write(STDOUT, s.as_bytes());
+        write(STDOUT, s.as_bytes());
         Ok(())
     }
 }
 
 pub fn print(args: fmt::Arguments) {
-    use fmt::Write;
     Stdout.write_fmt(args).unwrap();
 }
 
 #[macro_export]
 macro_rules! print {
     ($fmt: literal $(, $($arg: tt)+)?) => {
-        $crate::console::print(::core::format_args!($fmt $(, $($arg)+)?))
+        $crate::console::print(format_args!($fmt $(, $($arg)+)?));
     }
 }
 
 #[macro_export]
 macro_rules! println {
-    () => {
-        println!("")
-    };
     ($fmt: literal $(, $($arg: tt)+)?) => {
-        $crate::console::print(::core::format_args_nl!($fmt $(, $($arg)+)?))
-    };
+        $crate::console::print(format_args!(concat!($fmt, "\n") $(, $($arg)+)?))
+    }
+}
+
+pub fn getchar() -> u8 {
+    let mut c = [0u8; 1];
+    read(STDIN, &mut c);
+    c[0]
 }

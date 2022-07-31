@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 riscv = "0.8"
+buddy_system_allocator = "0.8"
 
 [profile.release]
 debug = true
@@ -41,21 +42,21 @@ debug = true
 # name = "write-c"
 # path = "src/bin/02write_c.rs"
 
-[[bin]]
-name = "power3"
-path = "src/bin/00power_3.rs"
+# [[bin]]
+# name = "power3"
+# path = "src/bin/00power_3.rs"
 
-[[bin]]
-name = "power5"
-path = "src/bin/01power_5.rs"
+# [[bin]]
+# name = "power5"
+# path = "src/bin/01power_5.rs"
 
-[[bin]]
-name = "power7"
-path = "src/bin/02power_7.rs"
+# [[bin]]
+# name = "power7"
+# path = "src/bin/02power_7.rs"
 
-[[bin]]
-name = "sleep"
-path = "src/bin/03sleep.rs"
+# [[bin]]
+# name = "sleep"
+# path = "src/bin/03sleep.rs"
 
 # [[bin]]
 # name = "test-task-info"
@@ -65,26 +66,34 @@ path = "src/bin/03sleep.rs"
 # name = "hello-world"
 # path = "src/bin/00hello_world.rs"
 
-[[bin]]
-name = "mmap0"
-path = "src/bin/ch4_mmap0.rs"
+# [[bin]]
+# name = "mmap0"
+# path = "src/bin/ch4_mmap0.rs"
+
+# [[bin]]
+# name = "mmap1"
+# path = "src/bin/ch4_mmap1.rs"
+
+# [[bin]]
+# name = "mmap2"
+# path = "src/bin/ch4_mmap2.rs"
+
+# [[bin]]
+# name = "mmap3"
+# path = "src/bin/ch4_mmap3.rs"
+
+# [[bin]]
+# name = "unmap"
+# path = "src/bin/ch4_unmap.rs"
+
+# [[bin]]
+# name = "unmap2"
+# path = "src/bin/ch4_unmap2.rs"
 
 [[bin]]
-name = "mmap1"
-path = "src/bin/ch4_mmap1.rs"
+name = "initproc"
+path = "src/bin/initproc.rs"
 
 [[bin]]
-name = "mmap2"
-path = "src/bin/ch4_mmap2.rs"
-
-[[bin]]
-name = "mmap3"
-path = "src/bin/ch4_mmap3.rs"
-
-[[bin]]
-name = "unmap"
-path = "src/bin/ch4_unmap.rs"
-
-[[bin]]
-name = "unmap2"
-path = "src/bin/ch4_unmap2.rs"
+name = "user-shell"
+path = "src/bin/user_shell.rs"

@@ -36,7 +36,7 @@ impl AddressSpace {
     }
 
     // Return the address space and kernel stack pointer
-    pub fn from_elf(elf_data: &[u8], asid: usize) -> (Self, usize) {
+    pub fn from_elf(elf_data: &[u8], asid: usize) -> Self {
         let elf = xmas_elf::ElfFile::new(elf_data).expect("invalid elf data");
         let magic = elf.header.pt1.magic;
         assert_eq!(magic, [0x7f, 0x45, 0x4c, 0x46], "invalid elf");
@@ -87,18 +87,33 @@ impl AddressSpace {
                 }
             }
         }
-        addr_space.alloc_page_for(USER_STACK_VA.vpn());
-        let usp = USER_STACK_VA.add(PAGE_SIZE);
 
-        let kstack_ppn = addr_space.alloc_kernel_page_for(KERNEL_STACK_VA.vpn());
-        let kstack =  unsafe { &mut *(kstack_ppn.as_pa().0 as *mut KernelStack) };
+        let mut mapped_size = 0;
+        while mapped_size < USER_STACK_SIZE {
+            addr_space.alloc_page_for(USER_STACK_VA.add(mapped_size).vpn());
+            mapped_size += PAGE_SIZE;
+        }
+        let usp = USER_STACK_VA.add(USER_STACK_SIZE);
+
+        let mut mapped_size = 0;
+        let mut kstack_ppn = PPN(0);
+        while mapped_size < KERNEL_STACK_SIZE {
+            kstack_ppn = addr_space.alloc_kernel_page_for(KERNEL_STACK_VA.add(mapped_size).vpn());
+            mapped_size += PAGE_SIZE;
+        }
+
+        // let kstack =  unsafe { &mut *(kstack_ppn.as_pa().0 as *mut KernelStack) };
+        let trap_cx_ptr = 
+            (kstack_ppn.as_pa().0 + PAGE_SIZE - core::mem::size_of::<TrapContext>()) as *mut TrapContext;
         let task_init_trap_cx = TrapContext::app_init_context(
             entry_point as usize, usp.0
         );
-        kstack.push_context(task_init_trap_cx);
-        let ksp = KERNEL_STACK_VA.add(PAGE_SIZE - core::mem::size_of::<TrapContext>()).0;
+        unsafe {
+            trap_cx_ptr.write(task_init_trap_cx);
+        }
+        // kstack.push_context(task_init_trap_cx);
 
-        (addr_space, ksp)
+        addr_space
     }
 
     pub fn satp(&self) -> usize {
@@ -213,7 +228,7 @@ impl AddressSpace {
         let root_table = unsafe { self.page_table.as_page_table() };
         let new_root_table = unsafe { new.page_table.as_page_table_mut() };
         for (index, root_pte) in root_table.0.iter().enumerate() {
-            if index == global_index[0] || index == global_index[1] {
+            if !root_pte.is_valid() || index == global_index[0] || index == global_index[1] {
                 continue;
             }
             let sub_table = unsafe { root_pte.as_page_table() };
@@ -226,6 +241,9 @@ impl AddressSpace {
             };
 
             for (index, sub_pte) in sub_table.0.iter().enumerate() {
+                if !sub_pte.is_valid() {
+                    continue;
+                }
                 let leaf_table = unsafe { sub_pte.as_page_table() };
                 let new_leaf_table = {
                     let new_leaf_ppn = new.alloc_page_table();
@@ -235,10 +253,14 @@ impl AddressSpace {
                     }
                 };
                 for (index, leaf_pte) in leaf_table.0.iter().enumerate() {
+                    if !leaf_pte.is_valid() {
+                        continue;
+                    }
                     let leaf_page = leaf_pte.ppn();
                     let new_leaf_page = new.alloc_frame();
                     unsafe {
                         // Use the identity mapping of physical memory
+                        crate::println!("leaf_page 0x{:x}\nnew_leaf_page 0x{:x}", leaf_page.as_pa().0, new_leaf_page.as_pa().0);
                         core::ptr::copy_nonoverlapping(
                             leaf_page.as_pa().0 as *const u8, 
                             new_leaf_page.as_pa().0 as *mut u8,
@@ -249,6 +271,7 @@ impl AddressSpace {
                 }
             }
         }
+        crate::println!("dup ok");
 
         new
     }

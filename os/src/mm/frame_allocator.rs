@@ -13,6 +13,7 @@ pub fn init(frame_start: PPN, frame_end: PPN) {
 
 pub fn frame_alloc() -> PPN {
     let frame = FRAME_ALLOCATOR.lock().alloc(1).expect("We run out of physical page frame. QAQ");
+    // crate::println!("frame alloc: 0x{:x}", frame);
     PPN(frame)
 }
 

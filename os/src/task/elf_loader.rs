@@ -7,7 +7,7 @@ use lazy_static::lazy_static;
 global_asm!(include_str!("../link_app.S"));
 extern "C" {
     static _num_app: usize;
-    static _app_names: usize;
+    static _app_names: c_char;
 }
 
 lazy_static! {
@@ -26,7 +26,7 @@ impl ElfLoader {
     unsafe fn new() -> Self {
         let mut elfs = BTreeMap::new();
 
-        let ptr = _num_app as *const usize;
+        let ptr = &_num_app as *const usize;
         let num_app = *ptr;
         let app_starts = {
             let table = ptr.add(1);
@@ -34,7 +34,7 @@ impl ElfLoader {
             core::slice::from_raw_parts(table, num_app + 1)
         };
 
-        let mut ptr = _app_names as *const c_char;
+        let mut ptr = &_app_names as *const c_char;
         for i in 0..num_app {
             let name: &'static str = CStr::from_ptr(ptr).to_str().expect("invalid app name");
             ptr = ptr.add(name.len() + 1);
@@ -44,6 +44,7 @@ impl ElfLoader {
                 let len = end - start;
                 core::slice::from_raw_parts(start as *const u8, len)
             };
+            crate::println!("add elf `{name}` size `0x{:x}`", elf.len());
             elfs.insert(name, elf);
         }
         Self { elfs }

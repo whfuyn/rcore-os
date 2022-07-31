@@ -80,6 +80,7 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
             1
         }
         SYSCALL_EXIT => {
+            crate::println!("call sys exit");
             let exit_code = args[0] as i32;
             exit_and_run_next(exit_code);
             0
@@ -125,6 +126,7 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
         }
         SYSCALL_WAITPID => {
             let pid = args[0] as isize; 
+            let exit_code_ptr = args[1] as *mut i32;
 
             let current_task = PROCESSOR.lock().current().expect("missing current").clone();
             let mut current_inner = current_task.lock();
@@ -143,8 +145,12 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
                 }
             }
             if let Some(found) = found {
-                current_inner.children.remove(found);
+                let exit_child = current_inner.children.remove(found);
+                unsafe {
+                    *exit_code_ptr = exit_child.lock().exit_code;
+                }
             }
+
             ret
         }
         SYSCALL_SPAWN => {
