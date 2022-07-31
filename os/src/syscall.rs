@@ -120,6 +120,30 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
             let current_task = PROCESSOR.lock().current().expect("missing current").clone();
             current_task.fork() as isize
         }
+        SYSCALL_WAITPID => {
+            let pid = args[0] as isize; 
+
+            let current_task = PROCESSOR.lock().current().expect("missing current").clone();
+            let mut current_inner = current_task.lock();
+
+            let mut ret = -1;
+            let mut found: Option<usize> = None;
+            for (idx, ch) in current_inner.children.iter().enumerate() {
+                if pid == -1 || ch.pid.0 == pid as usize {
+                    ret = -2;
+
+                    if ch.is_zombie() {
+                        ret = ch.pid.0 as isize;
+                        found = Some(idx);
+                        break;
+                    }
+                }
+            }
+            if let Some(found) = found {
+                current_inner.children.remove(found);
+            }
+            ret
+        }
         SYSCALL_GET_TIME => {
             let t = time::get_time();
             let time_val = unsafe { &mut *(args[0] as *mut TimeVal)};
