@@ -17,7 +17,7 @@ use pid::{ Pid, pid_alloc };
 pub use processor::PROCESSOR;
 use crate::trap::TRAP_CX_VA;
 use crate::trap::TrapContext;
-use crate::config::*;
+// use crate::config::*;
 
 pub use stack::KernelStack;
 use crate::sbi;
@@ -34,7 +34,7 @@ pub use elf_loader::get_app_data;
 //     static _num_app: usize;
 // }
 
-const STRIDE: u64 = 11234567;
+const STRIDE: u64 = 10007;
 
 global_asm!(include_str!("task/switch.S"));
 extern "C" {

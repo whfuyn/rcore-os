@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use frame_allocator::*;
 use page_table::GLOBAL_PTES;
 use crate::{
-    config::*, trap::TrapContext, task::KernelStack,
+    config::*, trap::TrapContext,
 };
 // use crate::println;
 
