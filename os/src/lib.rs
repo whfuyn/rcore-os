@@ -6,6 +6,7 @@
 #![feature(alloc_error_handler)]
 #![feature(core_c_str)]
 #![feature(core_ffi_c)]
+#![feature(const_option)]
 
 extern crate alloc;
 

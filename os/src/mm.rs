@@ -60,11 +60,11 @@ impl VirtAddr {
         self.0.get_bits(..12)
     }
 
-    pub fn add(self, count: usize) -> Self {
+    pub const fn add(self, count: usize) -> Self {
         VirtAddr(self.0.checked_add(count).expect("VirtAddr overflow"))
     }
 
-    pub fn offset_to(self, count: isize) -> Self {
+    pub const fn offset_to(self, count: isize) -> Self {
         if count < 0 {
             VirtAddr(self.0.checked_sub(count.abs() as usize).expect("VirtAddr underflow"))
         } else {

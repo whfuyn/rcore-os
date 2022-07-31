@@ -11,6 +11,7 @@ use riscv::register::{
     scause::{self, Exception, Interrupt, Trap},
     stval, stvec, sepc
 };
+pub use context::TRAP_CX_VA;
 
 global_asm!(include_str!("trap/trap.S"));
 extern "C" {

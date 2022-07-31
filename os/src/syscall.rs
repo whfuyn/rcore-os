@@ -8,6 +8,10 @@ use crate::time;
 use crate::mm::*;
 use crate::task::PROCESSOR;
 use crate::sbi::console_getchar;
+use core::ffi::CStr;
+use crate::task::get_app_data;
+// use crate::task::TaskControlBlock;
+// use crate::task::TASK_MANAGER;
 
 pub const FD_STDIN: usize = 0;
 pub const FD_STDOUT: usize = 1;
@@ -97,6 +101,24 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
             // crate::println!("\nyield..");
             run_next_task();
             0
+        }
+        SYSCALL_EXEC => {
+            let current_task = PROCESSOR.lock().current().expect("missing current").clone();
+
+            let elf_name: &'static str = unsafe {
+                CStr::from_ptr(args[0] as *const i8).to_str().expect("invalid app name")
+            };
+            let elf_data = match get_app_data(elf_name) {
+                Some(elf_data) => elf_data,
+                None => return -1,
+            };
+            current_task.exec(elf_data);
+
+            unreachable!()
+        }
+        SYSCALL_FORK => {
+            let current_task = PROCESSOR.lock().current().expect("missing current").clone();
+            current_task.fork() as isize
         }
         SYSCALL_GET_TIME => {
             let t = time::get_time();
@@ -221,9 +243,6 @@ pub fn syscall(id: usize, args: [usize; 3]) -> isize {
             task_info.time = stat.real_time() / time::CLOCKS_PER_MILLI_SEC;
 
             0
-        }
-        SYSCALL_FORK => {
-            todo!()
         }
         unknown => panic!("unknown syscall `{}`", unknown),
     }
