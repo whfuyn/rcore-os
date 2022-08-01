@@ -2,6 +2,7 @@
 
 参考[rCore-Tutorial-V3](https://rcore-os.github.io/rCore-Tutorial-Book-v3/)做的内核。
 
+[开发日记](https://github.com/whfuyn/rcore-os)
 
 这里每一步都是按照我自己的理解来做的，可能和教程里的代码有比较多的差异。
 
