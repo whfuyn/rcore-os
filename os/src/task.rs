@@ -54,11 +54,10 @@ lazy_static! {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum TaskStatus {
     #[default]
-    UnInit = 0,
-    Ready = 1,
-    Running = 2,
+    Ready = 0,
+    Running = 1,
     // Exited = 3,
-    Zombie = 3,
+    Zombie = 2,
 }
 
 #[derive(Debug, Clone, Default)]

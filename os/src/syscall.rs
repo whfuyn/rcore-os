@@ -51,6 +51,10 @@ struct TaskInfo {
     pub time: usize
 }
 
+// TODO:
+// check all user-passed args to ensure that the user has enough permission
+// to access that memory address.
+
 pub fn syscall(id: usize, args: [usize; 3]) -> isize {
     record_syscall(id);
 
