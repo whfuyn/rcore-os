@@ -1,3 +1,4 @@
+#![cfg_attr(not(test), no_std)]
 
 mod block_dev;
 mod block_cache;
