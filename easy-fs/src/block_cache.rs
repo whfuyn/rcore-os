@@ -35,11 +35,13 @@ impl BlockCacheManager {
     }
 
     fn put_cache(&mut self, cache: BlockCache) -> &mut BlockCache {
-        let evicted = self.caches.pop_front();
+        if self.caches.len() >= BLOCK_CACHE_SIZE {
+            let evicted = self.caches.pop_front();
 
-        if let Some(evicted) = evicted {
-            if evicted.modified {
-                self.block_dev.write_block(evicted.block_id, &evicted.cache);
+            if let Some(evicted) = evicted {
+                if evicted.modified {
+                    self.block_dev.write_block(evicted.block_id, &evicted.cache);
+                }
             }
         }
 
@@ -96,10 +98,15 @@ mod tests {
     use super::*;
     use crate::block_dev::tests::TestBlockDevice;
 
+    fn setup() -> (TestBlockDevice, BlockCacheManager) {
+        let inner_dev = TestBlockDevice::new();
+        let cache_mgr = BlockCacheManager::new(inner_dev.clone());
+        (inner_dev, cache_mgr)
+    }
+
     #[test]
-    fn block_cache_basic() {
-        let mut inner_dev = TestBlockDevice::new();
-        let mut cache_mgr = BlockCacheManager::new(inner_dev.clone());
+    fn block_cache_mgr_basic() {
+        let (mut inner_dev, mut cache_mgr) = setup();
 
         let b1 = [6; BLOCK_SIZE];
         let mut buf = [0; BLOCK_SIZE];
@@ -123,5 +130,19 @@ mod tests {
         assert!(buf.iter().all(|&b| b == 6));
         inner_dev.read_block(666, &mut buf);
         assert!(buf.iter().all(|&b| b == 6));
+    }
+
+    #[test]
+    fn block_cache_mgr_cache_size() {
+        let (_, mut cache_mgr) = setup();
+        let mut buf = [0; BLOCK_SIZE];
+        for _ in 0..2 {
+            cache_mgr.read_block(0, &mut buf)
+        }
+        assert_eq!(cache_mgr.caches.len(), 1);
+        for i in 0..BLOCK_CACHE_SIZE + 1 {
+            cache_mgr.read_block(i, &mut buf)
+        }
+        assert_eq!(cache_mgr.caches.len(), BLOCK_CACHE_SIZE);
     }
 }
