@@ -1,8 +1,8 @@
 use crate::Block;
 
 pub trait BlockDevice {
-    fn read_block(&mut self, block_id: usize, buf: &mut Block);
-    fn write_block(&mut self, block_id: usize, buf: &Block);
+    fn read_block(&self, block_id: usize, buf: &mut Block);
+    fn write_block(&self, block_id: usize, buf: &Block);
 }
 
 #[cfg(test)]
@@ -25,7 +25,7 @@ pub mod tests {
     }
 
     impl BlockDevice for TestBlockDevice {
-        fn read_block(&mut self, block_id: usize, buf: &mut Block) {
+        fn read_block(&self, block_id: usize, buf: &mut Block) {
             let mut blocks = self.blocks.borrow_mut();
             let block = blocks
                 .entry(block_id)
@@ -33,14 +33,14 @@ pub mod tests {
             buf.copy_from_slice(block);
         }
 
-        fn write_block(&mut self, block_id: usize, buf: &Block) {
+        fn write_block(&self, block_id: usize, buf: &Block) {
             self.blocks.borrow_mut().insert(block_id, buf.clone());
         }
     }
 
     #[test]
     fn test_block_device_basic() {
-        let mut dev = TestBlockDevice::new();
+        let dev = TestBlockDevice::new();
         let b1 = [6; BLOCK_SIZE];
         let mut buf = [0; BLOCK_SIZE];
 
