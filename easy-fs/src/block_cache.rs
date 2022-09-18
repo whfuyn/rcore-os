@@ -5,6 +5,7 @@ use alloc::sync::Arc;
 use alloc::collections::VecDeque;
 use spin::Mutex;
 use spin::MutexGuard;
+use core::mem::MaybeUninit;
 
 const BLOCK_CACHE_SIZE: usize = 1 << 4;
 
@@ -14,35 +15,53 @@ pub struct BlockCacheInner {
 }
 
 impl BlockCacheInner {
+    // TODO:
+    // if the target ptr is properly aligned, we may avoid the copy in read_unaligned
+    // and cast that ptr to reference directly.
+    // Or just panic when it doesn't align?
+
     /// Safety:
     /// - Data at target offset must be valid for type T.
     unsafe fn read<T, V>(&self, offset: usize, f: impl FnOnce(&T) -> V) -> V {
-        let type_size = core::mem::size_of::<T>();
-        if offset + type_size > BLOCK_SIZE {
-            panic!("out of bondary when trying to read block cache");
-        }
-
-        let ptr = &self.buf[offset] as *const u8 as *const T;
-        let t = ptr.read_unaligned();
-        let ret = f(&t);
-        core::mem::forget(t);
-        ret
+        self.read_maybe_uninit(offset, |r| {
+            f(r.assume_init_ref())
+        })
     }
 
     /// Safety:
     /// - Data at target offset must be valid for type T.
     unsafe fn modify<T, V>(&mut self, offset: usize, f: impl FnOnce(&mut T) -> V) -> V {
+        self.modify_maybe_uninit(offset, |r| {
+            f(r.assume_init_mut())
+        })
+    }
+
+    fn read_maybe_uninit<T, V>(&self, offset: usize, f: impl FnOnce(&MaybeUninit<T>) -> V) -> V {
         let type_size = core::mem::size_of::<T>();
         if offset + type_size > BLOCK_SIZE {
-            panic!("out of bondary when trying to read block cache");
+            panic!("out of boundary when trying to read block cache");
+        }
+
+        let ptr = &self.buf[offset] as *const u8 as *const MaybeUninit<T>;
+        let t = unsafe { ptr.read_unaligned() };
+        let ret = f(&t);
+        ret
+    }
+
+    fn modify_maybe_uninit<T, V>(&mut self, offset: usize, f: impl FnOnce(&mut MaybeUninit<T>) -> V) -> V {
+        let type_size = core::mem::size_of::<T>();
+        if offset + type_size > BLOCK_SIZE {
+            panic!("out of boundary when trying to modify block cache");
         }
 
         self.modified = true;
-        let ptr = &mut self.buf[offset] as *mut u8 as *mut T;
-        let mut t = ptr.read_unaligned();
-        let ret = f(&mut t);
-        ptr.write_unaligned(t);
-        ret
+        let ptr = &mut self.buf[offset] as *mut u8 as *mut MaybeUninit<T>;
+        unsafe {
+            let mut t = ptr.read_unaligned();
+            let ret = f(&mut t);
+            ptr.write_unaligned(t);
+            ret
+        }
     }
 }
 
@@ -83,6 +102,14 @@ impl BlockCache {
     /// - Data at target offset must be valid for type T.
     pub unsafe fn modify<T, V>(&self, offset: usize, f: impl FnOnce(&mut T) -> V) -> V {
         self.inner.lock().modify(offset, f)
+    }
+
+    fn read_maybe_uninit<T, V>(&self, offset: usize, f: impl FnOnce(&MaybeUninit<T>) -> V) -> V {
+        self.inner.lock().read_maybe_uninit(offset, f)
+    }
+
+    fn modify_maybe_uninit<T, V>(&mut self, offset: usize, f: impl FnOnce(&mut MaybeUninit<T>) -> V) -> V {
+        self.inner.lock().modify_maybe_uninit(offset, f)
     }
 }
 
