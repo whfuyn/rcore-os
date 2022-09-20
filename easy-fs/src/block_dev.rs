@@ -1,6 +1,7 @@
 use crate::Block;
 
-pub trait BlockDevice {
+pub trait BlockDevice: Send + Sync + 'static {
+// pub trait BlockDevice {
     fn read_block(&self, block_id: usize, buf: &mut Block);
     fn write_block(&self, block_id: usize, buf: &Block);
 }
@@ -10,23 +11,23 @@ pub mod tests {
     use super::*;
     use crate::BLOCK_SIZE;
     use alloc::collections::BTreeMap;
-    use alloc::rc::Rc;
-    use core::cell::RefCell;
+    use alloc::sync::Arc;
+    use spin::Mutex;
 
     #[derive(Clone)]
     pub struct TestBlockDevice {
-        blocks: Rc<RefCell<BTreeMap<usize, Block>>>,
+        blocks: Arc<Mutex<BTreeMap<usize, Block>>>,
     }
 
     impl TestBlockDevice {
         pub fn new() -> Self {
-            Self { blocks: Rc::new(RefCell::new(BTreeMap::new())) }
+            Self { blocks: Arc::new(Mutex::new(BTreeMap::new())) }
         }
     }
 
     impl BlockDevice for TestBlockDevice {
         fn read_block(&self, block_id: usize, buf: &mut Block) {
-            let mut blocks = self.blocks.borrow_mut();
+            let mut blocks = self.blocks.lock();
             let block = blocks
                 .entry(block_id)
                 .or_insert_with(|| [0; BLOCK_SIZE]);
@@ -34,7 +35,7 @@ pub mod tests {
         }
 
         fn write_block(&self, block_id: usize, buf: &Block) {
-            self.blocks.borrow_mut().insert(block_id, buf.clone());
+            self.blocks.lock().insert(block_id, buf.clone());
         }
     }
 
