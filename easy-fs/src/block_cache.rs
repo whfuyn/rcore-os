@@ -5,7 +5,9 @@ use alloc::sync::Arc;
 use alloc::collections::VecDeque;
 use spin::Mutex;
 use spin::MutexGuard;
+use spin::Once;
 use core::mem::MaybeUninit;
+use lazy_static::lazy_static;
 
 const BLOCK_CACHE_SIZE: usize = 1 << 4;
 
@@ -16,9 +18,9 @@ pub struct BlockCacheInner {
 
 impl BlockCacheInner {
     // TODO:
-    // if the target ptr is properly aligned, we may avoid the copy in read_unaligned
+    // If the target ptr is properly aligned, we may avoid the copy in read_unaligned
     // and cast that ptr to reference directly.
-    // Or just panic when it doesn't align?
+    // How to make such a stituation as more as possible?
 
     /// Safety:
     /// - Data at target offset must be valid for type T.
@@ -88,8 +90,16 @@ impl BlockCache {
         self.block_id
     }
 
-    fn lock(&self) -> MutexGuard<BlockCacheInner> {
+    pub fn lock(&self) -> MutexGuard<BlockCacheInner> {
         self.inner.lock()
+    }
+
+    pub fn flush(&self) {
+        let mut inner = self.lock();
+        if inner.modified {
+            self.block_dev.write_block(self.block_id, &inner.buf);
+            inner.modified = false;
+        }
     }
 
     /// Safety:
@@ -104,23 +114,19 @@ impl BlockCache {
         self.inner.lock().modify(offset, f)
     }
 
-    fn read_maybe_uninit<T, V>(&self, offset: usize, f: impl FnOnce(&MaybeUninit<T>) -> V) -> V {
+    pub fn read_maybe_uninit<T, V>(&self, offset: usize, f: impl FnOnce(&MaybeUninit<T>) -> V) -> V {
         self.inner.lock().read_maybe_uninit(offset, f)
     }
 
-    fn modify_maybe_uninit<T, V>(&mut self, offset: usize, f: impl FnOnce(&mut MaybeUninit<T>) -> V) -> V {
+    pub fn modify_maybe_uninit<T, V>(&mut self, offset: usize, f: impl FnOnce(&mut MaybeUninit<T>) -> V) -> V {
         self.inner.lock().modify_maybe_uninit(offset, f)
     }
 }
 
 impl Drop for BlockCache {
     fn drop(&mut self) {
-        let inner = self.inner.get_mut();
-        if inner.modified {
-            self.block_dev.write_block(self.block_id, &inner.buf);
-        }
+        self.flush();
     }
-
 }
 
 /// When out of cache slots, evict the unreferenced, first-cached entry.
@@ -130,7 +136,7 @@ pub struct BlockCacheManager {
 }
 
 impl BlockCacheManager {
-    pub fn new<T: BlockDevice + 'static>(dev: T) -> Self {
+    fn new<T: BlockDevice>(dev: T) -> Self {
         BlockCacheManager { caches: VecDeque::new(), block_dev: Arc::new(dev) }
     }
 
@@ -167,6 +173,33 @@ impl BlockCacheManager {
         };
         self.put_cache(cache)
     }
+
+    fn flush(&self)  {
+        self.caches.iter().for_each(|c| c.flush());
+    }
+}
+
+pub static BLOCK_CACHE_MANAGER: Once<Mutex<BlockCacheManager>> = Once::new();
+
+fn block_cache_manager() -> MutexGuard<'static, BlockCacheManager> {
+    if let Some(mgr) = BLOCK_CACHE_MANAGER.get() {
+        mgr.lock()
+    } else {
+        panic!("Block cache isn't initialized");
+    }
+
+}
+
+pub fn init_block_cache<T: BlockDevice>(block_dev: T) {
+    BLOCK_CACHE_MANAGER.call_once(|| Mutex::new(BlockCacheManager::new(block_dev)));
+}
+
+pub fn get_block_cache(block_id: usize) -> Arc<BlockCache> {
+    Arc::clone(block_cache_manager().get_cache(block_id))
+}
+
+pub fn flush_block_cache() {
+    block_cache_manager().flush();
 }
 
 #[cfg(test)]
@@ -174,7 +207,7 @@ mod tests {
     use super::*;
     use crate::block_dev::tests::TestBlockDevice;
 
-    fn setup() -> (TestBlockDevice, BlockCacheManager) {
+    pub fn setup() -> (TestBlockDevice, BlockCacheManager) {
         let inner_dev = TestBlockDevice::new();
         let cache_mgr = BlockCacheManager::new(inner_dev.clone());
         (inner_dev, cache_mgr)
