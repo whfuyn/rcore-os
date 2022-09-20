@@ -30,12 +30,12 @@ impl Bitmap {
                 bitmap
                     .iter_mut()
                     .enumerate()
-                    .find_map(|(byte_pos, b)|
+                    .find_map(|(u64_pos, b)|
                         if *b != u64::MAX {
                             let bit_pos = b.trailing_ones();
                             // *b |= *b + 1;
                             *b |= 1 << bit_pos;
-                            Some((byte_pos as u32) * u64::BITS + bit_pos)
+                            Some((u64_pos as u32) * u64::BITS + bit_pos)
                         } else {
                             None
                         }
@@ -46,6 +46,25 @@ impl Bitmap {
             }
         }
         None
+    }
+
+    pub fn dealloc(&self, block_offset: u32) {
+        let bit_pos = block_offset % u64::BITS;
+        let u64_pos = block_offset % BLOCK_BITS as u32 / 64;
+        let block_pos = block_offset / BLOCK_BITS as u32;
+
+        if block_pos >= self.size as u32 {
+            panic!("try to dealloc a block offset that is out of the bitmap");
+        }
+        let block_id = self.start_block + block_pos as usize;
+        let block = get_block_cache(block_id);
+        let f = |bitmap: &mut BitmapBlock| {
+            assert!(bitmap[u64_pos as usize] & (1 << bit_pos) != 0);
+            bitmap[u64_pos as usize] &= !(1 << bit_pos);
+        };
+        unsafe {
+            block.modify(0, f);
+        }
     }
 }
 
@@ -73,6 +92,16 @@ mod tests {
         assert_eq!(u64::from_le_bytes(buf[0..8].try_into().unwrap()), u64::MAX);
         block_dev.read_block(0, &mut buf);
         assert_eq!(u64::from_le_bytes(buf[8..16].try_into().unwrap()), u64::MAX);
+
+        bitmap.dealloc(0);
+        bitmap.dealloc(127);
+        assert_eq!(bitmap.alloc(), Some(0));
+        assert_eq!(bitmap.alloc(), Some(127));
+        bitmap.dealloc(64);
+        flush_block_cache();
+
+        block_dev.read_block(0, &mut buf);
+        assert_eq!(u64::from_le_bytes(buf[8..16].try_into().unwrap()), u64::MAX - 1);
     }
 }
 
