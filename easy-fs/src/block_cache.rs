@@ -121,7 +121,7 @@ impl BlockCache {
         self.inner.lock().read_maybe_uninit(offset, f)
     }
 
-    pub fn modify_maybe_uninit<T, V>(&mut self, offset: usize, f: impl FnOnce(&mut MaybeUninit<T>) -> V) -> V {
+    pub fn modify_maybe_uninit<T, V>(&self, offset: usize, f: impl FnOnce(&mut MaybeUninit<T>) -> V) -> V {
         self.inner.lock().modify_maybe_uninit(offset, f)
     }
 }
@@ -178,7 +178,7 @@ impl BlockCacheManager {
         self.put_block(cache)
     }
 
-    fn flush(&self)  {
+    pub fn flush(&self)  {
         self.caches.iter().for_each(|c| c.flush());
     }
 }
@@ -207,7 +207,7 @@ impl BlockCacheManager {
 // }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use crate::block_dev::tests::TestBlockDevice;
 

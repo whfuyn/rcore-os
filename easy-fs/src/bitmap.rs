@@ -87,7 +87,7 @@ mod tests {
             assert_eq!(bitmap.alloc(&mut cache_mgr), Some(i));
         }
 
-        flush_block_cache();
+        cache_mgr.flush();
 
         let mut buf = [0u8; BLOCK_SIZE];
         block_dev.read_block(0, &mut buf);
@@ -100,7 +100,7 @@ mod tests {
         assert_eq!(bitmap.alloc(&mut cache_mgr), Some(0));
         assert_eq!(bitmap.alloc(&mut cache_mgr), Some(127));
         bitmap.dealloc(64, &mut cache_mgr);
-        flush_block_cache();
+        cache_mgr.flush();
 
         block_dev.read_block(0, &mut buf);
         assert_eq!(u64::from_le_bytes(buf[8..16].try_into().unwrap()), u64::MAX - 1);

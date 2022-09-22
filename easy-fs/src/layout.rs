@@ -4,6 +4,7 @@ use core::mem;
 use crate::{BLOCK_SIZE, Block};
 use crate::block_cache::BlockCacheManager;
 use crate::bitmap::Bitmap;
+use core::mem::MaybeUninit;
 
 const EASY_FS_MAGIC: u32 = 0x666;
 const INODE_DIRECT_COUNT: usize = 28;
@@ -23,6 +24,8 @@ pub struct SuperBlock {
     pub data_area_blocks: u32,
 }
 
+// 32 * 4 = 128 bytes
+#[derive(Debug, Clone)]
 #[repr(C)]
 pub struct DiskInode {
     pub size: u32,
@@ -32,10 +35,10 @@ pub struct DiskInode {
 }
 
 #[repr(u32)]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiskInodeType {
-    File,
-    Directory,
+    File = 1,
+    Directory = 2,
 }
 
 enum InnerId {
@@ -81,7 +84,7 @@ impl DiskInode {
         (size as usize).div_ceil(BLOCK_SIZE)
     }
 
-    fn resize(&mut self, new_size: u32, bitmap: &Bitmap, cache_mgr: &mut BlockCacheManager) {
+    pub fn resize(&mut self, new_size: u32, bitmap: &Bitmap, cache_mgr: &mut BlockCacheManager) {
         assert!(new_size as usize <= MAX_FILE_SIZE, "file size limit exceeded");
 
         let new_blocks = Self::blocks_for_size(new_size);
@@ -156,12 +159,13 @@ impl DiskInode {
                 _ => (),
             }
         }
+        self.size = new_size;
     }
 
     pub fn read_at(
         &self,
         offset: usize,
-        data: &mut [u8], 
+        buf: &mut [u8], 
         cache_mgr: &mut BlockCacheManager,
     ) {
         let start_inner_id = offset / BLOCK_SIZE;
@@ -169,14 +173,15 @@ impl DiskInode {
 
         let mut inner_id = start_inner_id;
         let mut block_start = start_offset;
-        let mut data_start = 0;
-        while data_start < data.len() {
+        let mut buf_start = 0;
+        while buf_start < buf.len() {
             let block_id = self.get_block_id(inner_id, cache_mgr);
             let block = cache_mgr.get_block(block_id as usize);
             let f = |b: &Block| {
-                let block_end = core::cmp::min(block_start + data[data_start..].len(), BLOCK_SIZE);
-                data[data_start..].copy_from_slice(&b[block_start..block_end]);
-                data_start += block_end - block_start;
+                let block_end = core::cmp::min(block_start + buf[buf_start..].len(), BLOCK_SIZE);
+                let buf_end = buf_start + block_end - block_start;
+                buf[buf_start..buf_end].copy_from_slice(&b[block_start..block_end]);
+                buf_start = buf_end;
             };
             unsafe { block.read(0, f) }
             inner_id += 1;
@@ -203,7 +208,8 @@ impl DiskInode {
             let block = cache_mgr.get_block(block_id as usize);
             let f = |b: &mut Block| {
                 let data_end = data_start + core::cmp::min(data[data_start..].len(), BLOCK_SIZE);
-                b[block_start..].copy_from_slice(&data[data_start..data_end]);
+                let block_end = block_start + data_end - data_start;
+                b[block_start..block_end].copy_from_slice(&data[data_start..data_end]);
                 data_start = data_end
             };
             unsafe { block.modify(0, f) }
@@ -263,5 +269,94 @@ impl DiskInode {
                 unsafe { indirect2.modify(0, f) }
             }
         }
+    }
+
+}
+
+pub struct Inode {
+    block_id: usize,
+    offset: usize,
+}
+
+impl Inode {
+    #[track_caller]
+    pub fn new(block_id: usize, offset: usize) -> Self {
+        assert!(offset % core::mem::size_of::<DiskInode>() == 0, "offset doesn't align");
+
+        Self {
+            block_id,
+            offset,
+        }
+    }
+
+    pub fn create(block_id: usize, offset: usize, ty: DiskInodeType, cache_mgr: &mut BlockCacheManager) -> Self {
+        assert!(offset % core::mem::size_of::<DiskInode>() == 0, "offset doesn't align");
+
+        let block = cache_mgr.get_block(block_id);
+        let f = |di: &mut MaybeUninit<DiskInode>| {
+            di.write(DiskInode::new(ty));
+        };
+        block.modify_maybe_uninit(offset, f);
+        Self {
+            block_id,
+            offset,
+        }
+    }
+
+    pub fn create_file(block_id: usize, offset: usize, cache_mgr: &mut BlockCacheManager) -> Self {
+        Self::create(block_id, offset, DiskInodeType::File, cache_mgr)
+    }
+
+    pub fn create_dir(block_id: usize, offset: usize, cache_mgr: &mut BlockCacheManager) -> Self {
+        Self::create(block_id, offset, DiskInodeType::Directory, cache_mgr)
+    }
+
+    pub unsafe fn resize(&self, new_size: u32, bitmap: &Bitmap, cache_mgr: &mut BlockCacheManager) {
+        let block = Arc::clone(cache_mgr.get_block(self.block_id));
+        let f = |di: &mut DiskInode| {
+            di.resize(new_size, bitmap, cache_mgr);
+        };
+        block.modify(self.offset, f);
+    }
+
+    pub unsafe fn read_at(&self, offset: usize, buf: &mut [u8], cache_mgr: &mut BlockCacheManager) {
+        let block = Arc::clone(cache_mgr.get_block(self.block_id));
+        let f = |di: &DiskInode| {
+            di.read_at(offset, buf, cache_mgr)
+        };
+        block.read(self.offset, f);
+    }
+
+    pub unsafe fn write_at(&self, offset: usize, data: &[u8], bitmap: &Bitmap, cache_mgr: &mut BlockCacheManager) {
+        let block = Arc::clone(cache_mgr.get_block(self.block_id));
+        let f = |di: &mut DiskInode| {
+            di.write_at(offset, data, bitmap, cache_mgr)
+        };
+        block.modify(self.offset, f);
+    }
+}
+
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::block_cache::tests::setup;
+
+    #[test]
+    fn disk_inode_basic() {
+        let (_block_dev, mut cache_mgr) = setup();
+        let bitmap = Bitmap::new(0, 4);
+
+        let mut inode = DiskInode::file();
+        let inode_block_id = bitmap.alloc(&mut cache_mgr).unwrap();
+        let b1 = cache_mgr.get_block(inode_block_id);
+        b1.modify_maybe_uninit(0, |b| { b.write(inode.clone()); });
+
+        let data = b"hello, world!";
+        let mut buf = [0; 13];
+        inode.write_at(0, data, &bitmap, &mut cache_mgr);
+        inode.read_at(0, &mut buf, &mut cache_mgr);
+        assert_eq!(data, &buf);
     }
 }
