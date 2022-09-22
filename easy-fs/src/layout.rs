@@ -1,6 +1,7 @@
 use alloc::sync::Arc;
 
 use core::mem;
+use core::cmp;
 use crate::{BLOCK_SIZE, Block};
 use crate::block_cache::BlockCacheManager;
 use crate::block_cache::BlockCache;
@@ -190,26 +191,34 @@ impl DiskInode {
         offset: usize,
         buf: &mut [u8], 
         cache_mgr: &mut BlockCacheManager,
-    ) {
+    ) -> usize {
         let start_inner_id = offset / BLOCK_SIZE;
         let start_offset = offset % BLOCK_SIZE;
 
         let mut inner_id = start_inner_id;
         let mut block_start = start_offset;
         let mut buf_start = 0;
-        while buf_start < buf.len() {
+        let mut remain = (self.size as usize).saturating_sub(offset);
+        while buf_start < buf.len() && remain > 0 {
             let block_id = self.get_block_id(inner_id, cache_mgr);
             let block = cache_mgr.get_block(block_id as usize);
             let f = |b: &Block| {
-                let block_end = core::cmp::min(block_start + buf[buf_start..].len(), BLOCK_SIZE);
-                let buf_end = buf_start + block_end - block_start;
+                let n = {
+                    let v = cmp::min(buf[buf_start..].len(), BLOCK_SIZE - block_start);
+                    cmp::min(v, remain)
+                };
+                let block_end = block_start + n;
+                let buf_end = buf_start + n;
                 buf[buf_start..buf_end].copy_from_slice(&b[block_start..block_end]);
                 buf_start = buf_end;
+                remain -= n;
             };
             unsafe { block.read(0, f) }
             inner_id += 1;
             block_start = 0;
         }
+        // bytes readed
+        buf_start
     }
 
     pub fn write_at(
@@ -230,7 +239,7 @@ impl DiskInode {
             let block_id = self.get_block_id(inner_id, cache_mgr);
             let block = cache_mgr.get_block(block_id as usize);
             let f = |b: &mut Block| {
-                let data_end = data_start + core::cmp::min(data[data_start..].len(), BLOCK_SIZE - block_start);
+                let data_end = data_start + cmp::min(data[data_start..].len(), BLOCK_SIZE - block_start);
                 let block_end = block_start + data_end - data_start;
                 b[block_start..block_end].copy_from_slice(&data[data_start..data_end]);
                 data_start = data_end
@@ -333,6 +342,14 @@ impl Inode {
         Self::create(block_id, offset, DiskInodeType::Directory, cache_mgr)
     }
 
+    pub unsafe fn size(&self, cache_mgr: &mut BlockCacheManager) -> usize {
+        let block = cache_mgr.get_block(self.block_id);
+        let f = |di: &DiskInode| {
+            di.size as usize
+        };
+        block.read(self.offset, f)
+    }
+
     pub unsafe fn resize(&self, new_size: u32, block_allocator: &BlockAllocator, cache_mgr: &mut BlockCacheManager) {
         let block = Arc::clone(cache_mgr.get_block(self.block_id));
         let f = |di: &mut DiskInode| {
@@ -341,12 +358,12 @@ impl Inode {
         block.modify(self.offset, f);
     }
 
-    pub unsafe fn read_at(&self, offset: usize, buf: &mut [u8], cache_mgr: &mut BlockCacheManager) {
+    pub unsafe fn read_at(&self, offset: usize, buf: &mut [u8], cache_mgr: &mut BlockCacheManager) -> usize {
         let block = Arc::clone(cache_mgr.get_block(self.block_id));
         let f = |di: &DiskInode| {
             di.read_at(offset, buf, cache_mgr)
         };
-        block.read(self.offset, f);
+        block.read(self.offset, f)
     }
 
     pub unsafe fn write_at(&self, offset: usize, data: &[u8], block_allocator: &BlockAllocator, cache_mgr: &mut BlockCacheManager) {
@@ -368,7 +385,7 @@ mod tests {
     #[test]
     fn inode_basic() {
         let (_block_dev, mut cache_mgr) = setup();
-        let bitmap = Bitmap::new(0, 4);
+        let bitmap = Bitmap::new(0, 10);
         let block_allocator = BlockAllocator::new(10, &bitmap);
 
         let inode_block = block_allocator.alloc(&mut cache_mgr).unwrap();
@@ -381,5 +398,26 @@ mod tests {
             inode.read_at(510, &mut buf, &mut cache_mgr);
         }
         assert_eq!(data, &buf);
+        assert_eq!(unsafe { inode.size(&mut cache_mgr) }, 523);
     }
+
+    #[test]
+    fn inode_read_over_bound() {
+        let (_block_dev, mut cache_mgr) = setup();
+        let bitmap = Bitmap::new(0, 10);
+        let block_allocator = BlockAllocator::new(10, &bitmap);
+
+        let inode_block = block_allocator.alloc(&mut cache_mgr).unwrap();
+        let inode = Inode::create_file(inode_block.block_id(), 0, &mut cache_mgr);
+
+        let data = b"hello, world!";
+        let mut buf = [0; 13];
+        unsafe {
+            inode.write_at(0, data, &block_allocator, &mut cache_mgr);
+            assert_eq!(inode.read_at(13, &mut buf, &mut cache_mgr), 0);
+            assert_eq!(inode.read_at(1, &mut buf, &mut cache_mgr), 12);
+        }
+        assert_eq!(&buf[..12], &data[1..]);
+    }
+
 }
