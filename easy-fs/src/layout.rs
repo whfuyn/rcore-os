@@ -9,6 +9,8 @@ const EASY_FS_MAGIC: u32 = 0x666;
 const INODE_DIRECT_COUNT: usize = 28;
 const INODE_INDIRECT_COUNT: usize = BLOCK_SIZE / core::mem::size_of::<u32>();
 
+const MAX_FILE_SIZE: usize = (INODE_DIRECT_COUNT + INODE_INDIRECT_COUNT + INODE_INDIRECT_COUNT.pow(2)) * BLOCK_SIZE;
+
 type IndirectBlock = [u32; INODE_INDIRECT_COUNT];
 
 #[repr(C)]
@@ -79,10 +81,12 @@ impl DiskInode {
         (size as usize).div_ceil(BLOCK_SIZE)
     }
 
-    fn resize(&mut self, size: u32, bitmap: &Bitmap, cache_mgr: &mut BlockCacheManager) {
-        let new_blocks = Self::blocks_for_size(size);
+    fn resize(&mut self, new_size: u32, bitmap: &Bitmap, cache_mgr: &mut BlockCacheManager) {
+        assert!(new_size as usize <= MAX_FILE_SIZE, "file size limit exceeded");
+
+        let new_blocks = Self::blocks_for_size(new_size);
         let old_blocks = Self::blocks_for_size(self.size);
-        if self.size < size {
+        if self.size < new_size {
             if self.size > 0 {
                 // clear pass-the-end data at last block
                 let last_block = cache_mgr.get_block(old_blocks - 1);
@@ -97,7 +101,7 @@ impl DiskInode {
                 unsafe { block.modify(0, f) };
                 self.set_block_id(inner_id, new_block_id as u32, bitmap, cache_mgr);
             }
-        } else if self.size > size {
+        } else if self.size > new_size {
             for inner_id in new_blocks..old_blocks {
                 let deallocated = self.set_block_id(inner_id, 0, bitmap, cache_mgr);
                 bitmap.dealloc(deallocated as usize, cache_mgr);
@@ -154,14 +158,58 @@ impl DiskInode {
         }
     }
 
-    pub fn write_at(
+    pub fn read_at(
         &self,
+        offset: usize,
+        data: &mut [u8], 
+        cache_mgr: &mut BlockCacheManager,
+    ) {
+        let start_inner_id = offset / BLOCK_SIZE;
+        let start_offset = offset % BLOCK_SIZE;
+
+        let mut inner_id = start_inner_id;
+        let mut block_start = start_offset;
+        let mut data_start = 0;
+        while data_start < data.len() {
+            let block_id = self.get_block_id(inner_id, cache_mgr);
+            let block = cache_mgr.get_block(block_id as usize);
+            let f = |b: &Block| {
+                let block_end = core::cmp::min(block_start + data[data_start..].len(), BLOCK_SIZE);
+                data[data_start..].copy_from_slice(&b[block_start..block_end]);
+                data_start += block_end - block_start;
+            };
+            unsafe { block.read(0, f) }
+            inner_id += 1;
+            block_start = 0;
+        }
+    }
+
+    pub fn write_at(
+        &mut self,
         offset: usize,
         data: &[u8], 
         bitmap: &Bitmap,
         cache_mgr: &mut BlockCacheManager,
     ) {
-        todo!()
+        self.resize((offset + data.len()) as u32, bitmap, cache_mgr);
+        let start_inner_id = offset / BLOCK_SIZE;
+        let start_offset = offset % BLOCK_SIZE;
+
+        let mut inner_id = start_inner_id;
+        let mut block_start = start_offset;
+        let mut data_start = 0;
+        while data_start < data.len() {
+            let block_id = self.get_block_id(inner_id, cache_mgr);
+            let block = cache_mgr.get_block(block_id as usize);
+            let f = |b: &mut Block| {
+                let data_end = data_start + core::cmp::min(data[data_start..].len(), BLOCK_SIZE);
+                b[block_start..].copy_from_slice(&data[data_start..data_end]);
+                data_start = data_end
+            };
+            unsafe { block.modify(0, f) }
+            inner_id += 1;
+            block_start = 0;
+        }
     }
 
     pub fn get_block_id(&self, inner_id: usize, cache_mgr: &mut BlockCacheManager) -> u32 {
