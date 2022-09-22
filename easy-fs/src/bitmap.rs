@@ -43,26 +43,21 @@ impl Bitmap {
                     )
             };
             if let Some(inner_pos) = unsafe { block.modify(0, f) } {
-                return Some(self.start_block + (block_pos * BLOCK_BITS) + inner_pos as usize);
+                return Some(block_pos * BLOCK_BITS + inner_pos as usize);
             }
         }
         None
     }
 
-    pub fn dealloc(&self, block_id: usize, cache_mgr: &mut BlockCacheManager) {
-        if block_id == 0 {
-            return;
-        }
-
-        let block_offset = block_id - self.start_block;
-        let bit_pos = block_offset % u64::BITS as usize;
-        let u64_pos = block_offset % BLOCK_BITS / 64;
-        let block_pos = block_offset / BLOCK_BITS;
+    pub fn dealloc(&self, slot: usize, cache_mgr: &mut BlockCacheManager) {
+        let bit_pos = slot % u64::BITS as usize;
+        let u64_pos = slot % BLOCK_BITS / 64;
+        let block_pos = slot / BLOCK_BITS;
 
         if block_pos >= self.size {
             panic!("try to dealloc a block offset that is out of the bitmap");
         }
-        let block = cache_mgr.get_block(block_id);
+        let block = cache_mgr.get_block(self.start_block + block_pos);
         let f = |bitmap: &mut BitmapBlock| {
             assert!(bitmap[u64_pos as usize] & (1 << bit_pos) != 0);
             bitmap[u64_pos as usize] &= !(1 << bit_pos);
