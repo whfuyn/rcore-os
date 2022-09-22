@@ -8,9 +8,12 @@ use spin::MutexGuard;
 use spin::Once;
 use core::mem::MaybeUninit;
 use lazy_static::lazy_static;
+use core::ptr::addr_of;
+use core::ptr::addr_of_mut;
 
 const BLOCK_CACHE_SIZE: usize = 1 << 4;
 
+#[repr(C, align(16))]
 pub struct BlockCacheInner {
     buf: Block,
     modified: bool,
@@ -44,7 +47,7 @@ impl BlockCacheInner {
             panic!("out of boundary when trying to read block cache");
         }
 
-        let ptr = &self.buf[offset] as *const u8 as *const MaybeUninit<T>;
+        let ptr = addr_of!(self.buf[offset]) as *const MaybeUninit<T>;
         let t = unsafe { ptr.read_unaligned() };
         let ret = f(&t);
         ret
@@ -57,7 +60,7 @@ impl BlockCacheInner {
         }
 
         self.modified = true;
-        let ptr = &mut self.buf[offset] as *mut u8 as *mut MaybeUninit<T>;
+        let ptr = addr_of_mut!(self.buf[offset]) as *mut MaybeUninit<T>;
         unsafe {
             let mut t = ptr.read_unaligned();
             let ret = f(&mut t);
@@ -130,6 +133,7 @@ impl Drop for BlockCache {
 }
 
 /// When out of cache slots, evict the unreferenced, first-cached entry.
+/// i.e. FIFO with ref count limit.
 pub struct BlockCacheManager {
     caches: VecDeque<Arc<BlockCache>>,
     block_dev: Arc<dyn BlockDevice>,
@@ -141,7 +145,7 @@ impl BlockCacheManager {
     }
 
     // Return &Arc to allow user to decide whether to clone it or not.
-    fn put_cache(&mut self, cache: BlockCache) -> &Arc<BlockCache> {
+    fn put_block(&mut self, cache: BlockCache) -> &Arc<BlockCache> {
         if self.caches.len() >= BLOCK_CACHE_SIZE {
             let evicted_pos = self.caches
                 .iter()
@@ -159,7 +163,7 @@ impl BlockCacheManager {
         self.caches.back().unwrap()
     }
 
-    fn get_cache(&mut self, block_id: usize) -> &Arc<BlockCache> {
+    pub fn get_block(&mut self, block_id: usize) -> &Arc<BlockCache> {
         if let Some(idx) = self.caches
             .iter()
             .position(|b| b.block_id == block_id)
@@ -171,7 +175,7 @@ impl BlockCacheManager {
             self.block_dev.read_block(block_id, &mut buf);
             BlockCache::new(Arc::clone(&self.block_dev), block_id, buf)
         };
-        self.put_cache(cache)
+        self.put_block(cache)
     }
 
     fn flush(&self)  {
@@ -179,28 +183,28 @@ impl BlockCacheManager {
     }
 }
 
-pub static BLOCK_CACHE_MANAGER: Once<Mutex<BlockCacheManager>> = Once::new();
+// pub static BLOCK_CACHE_MANAGER: Once<Mutex<BlockCacheManager>> = Once::new();
 
-fn block_cache_manager() -> MutexGuard<'static, BlockCacheManager> {
-    if let Some(mgr) = BLOCK_CACHE_MANAGER.get() {
-        mgr.lock()
-    } else {
-        panic!("Block cache isn't initialized");
-    }
+// fn block_cache_manager() -> MutexGuard<'static, BlockCacheManager> {
+//     if let Some(mgr) = BLOCK_CACHE_MANAGER.get() {
+//         mgr.lock()
+//     } else {
+//         panic!("Block cache isn't initialized");
+//     }
 
-}
+// }
 
-pub fn init_block_cache<T: BlockDevice>(block_dev: T) {
-    BLOCK_CACHE_MANAGER.call_once(|| Mutex::new(BlockCacheManager::new(block_dev)));
-}
+// pub fn init_block_cache<T: BlockDevice>(block_dev: T) {
+//     BLOCK_CACHE_MANAGER.call_once(|| Mutex::new(BlockCacheManager::new(block_dev)));
+// }
 
-pub fn get_block_cache(block_id: usize) -> Arc<BlockCache> {
-    Arc::clone(block_cache_manager().get_cache(block_id))
-}
+// pub fn get_block_cache(block_id: usize) -> Arc<BlockCache> {
+//     Arc::clone(block_cache_manager().get_cache(block_id))
+// }
 
-pub fn flush_block_cache() {
-    block_cache_manager().flush();
-}
+// pub fn flush_block_cache() {
+//     block_cache_manager().flush();
+// }
 
 #[cfg(test)]
 mod tests {
@@ -219,7 +223,7 @@ mod tests {
 
         let mut buf = [0; BLOCK_SIZE];
 
-        let b1 = Arc::clone(cache_mgr.get_cache(1));
+        let b1 = Arc::clone(cache_mgr.get_block(1));
         unsafe {
             b1.read(0, |d: &u8| {
                 assert!(*d == 0);
@@ -232,7 +236,7 @@ mod tests {
                 assert!(*d == 1);
             });
         }
-        let b2 = Arc::clone(cache_mgr.get_cache(2));
+        let b2 = Arc::clone(cache_mgr.get_block(2));
         unsafe {
             b2.modify(2, |d: &mut u8| {
                 *d = 2;
@@ -256,11 +260,11 @@ mod tests {
     fn block_cache_mgr_cache_size() {
         let (_, mut cache_mgr) = setup();
         for _ in 0..2 {
-            cache_mgr.get_cache(0);
+            cache_mgr.get_block(0);
         }
         assert_eq!(cache_mgr.caches.len(), 1);
         for i in 0..BLOCK_CACHE_SIZE + 1 {
-            cache_mgr.get_cache(i);
+            cache_mgr.get_block(i);
         }
         assert_eq!(cache_mgr.caches.len(), BLOCK_CACHE_SIZE);
     }

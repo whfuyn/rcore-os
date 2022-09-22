@@ -1,7 +1,8 @@
 use crate::{
     block_dev::BlockDevice,
     BLOCK_SIZE,
-    block_cache::get_block_cache,
+    block_cache::BlockCacheManager,
+
 };
 
 
@@ -22,10 +23,10 @@ impl Bitmap {
         }
     }
 
-    pub fn alloc(&self) -> Option<u32> {
+    pub fn alloc(&self, cache_mgr: &mut BlockCacheManager) -> Option<u32> {
         for block_pos in 0..self.size {
             let block_id = self.start_block + block_pos;
-            let block = get_block_cache(block_id);
+            let block = cache_mgr.get_block(block_id);
             let f = |bitmap: &mut BitmapBlock| {
                 bitmap
                     .iter_mut()
@@ -48,7 +49,7 @@ impl Bitmap {
         None
     }
 
-    pub fn dealloc(&self, block_offset: u32) {
+    pub fn dealloc(&self, block_offset: u32, cache_mgr: &mut BlockCacheManager) {
         let bit_pos = block_offset % u64::BITS;
         let u64_pos = block_offset % BLOCK_BITS as u32 / 64;
         let block_pos = block_offset / BLOCK_BITS as u32;
@@ -57,7 +58,7 @@ impl Bitmap {
             panic!("try to dealloc a block offset that is out of the bitmap");
         }
         let block_id = self.start_block + block_pos as usize;
-        let block = get_block_cache(block_id);
+        let block = cache_mgr.get_block(block_id);
         let f = |bitmap: &mut BitmapBlock| {
             assert!(bitmap[u64_pos as usize] & (1 << bit_pos) != 0);
             bitmap[u64_pos as usize] &= !(1 << bit_pos);
@@ -71,18 +72,15 @@ impl Bitmap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::block_cache::init_block_cache;
-    use crate::block_cache::flush_block_cache;
-    use crate::block_dev::tests::TestBlockDevice;
+    use crate::block_cache::tests::setup;
 
     #[test]
     fn bitmap_basic() {
-        let block_dev = TestBlockDevice::new();
-        init_block_cache(block_dev.clone());
+        let (block_dev, mut cache_mgr) = setup();
 
         let bitmap = Bitmap::new(0, 1);
         for i in 0..128 {
-            assert_eq!(bitmap.alloc(), Some(i));
+            assert_eq!(bitmap.alloc(&mut cache_mgr), Some(i));
         }
 
         flush_block_cache();
@@ -93,11 +91,11 @@ mod tests {
         block_dev.read_block(0, &mut buf);
         assert_eq!(u64::from_le_bytes(buf[8..16].try_into().unwrap()), u64::MAX);
 
-        bitmap.dealloc(0);
-        bitmap.dealloc(127);
-        assert_eq!(bitmap.alloc(), Some(0));
-        assert_eq!(bitmap.alloc(), Some(127));
-        bitmap.dealloc(64);
+        bitmap.dealloc(0, &mut cache_mgr);
+        bitmap.dealloc(127, &mut cache_mgr);
+        assert_eq!(bitmap.alloc(&mut cache_mgr), Some(0));
+        assert_eq!(bitmap.alloc(&mut cache_mgr), Some(127));
+        bitmap.dealloc(64, &mut cache_mgr);
         flush_block_cache();
 
         block_dev.read_block(0, &mut buf);
