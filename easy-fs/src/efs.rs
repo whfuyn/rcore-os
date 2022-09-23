@@ -40,7 +40,6 @@ impl Inode {
     }
 
     pub unsafe fn read_at(&self, offset: usize, buf: &mut [u8], fs: &EasyFileSystem) -> usize {
-        // let block = Arc::clone(cache_mgr.get_block(self.block_id));
         let block = fs.get_block(self.block_id);
         let f = |di: &DiskInode| {
             di.read_at(offset, buf, fs)
@@ -49,7 +48,6 @@ impl Inode {
     }
 
     pub unsafe fn write_at(&self, offset: usize, data: &[u8], fs: &EasyFileSystem) {
-        // let block = Arc::clone(cache_mgr.get_block(self.block_id));
         let block = fs.get_block(self.block_id);
         let f = |di: &mut DiskInode| {
             di.write_at(offset, data, fs)
@@ -120,7 +118,8 @@ impl EasyFileSystem {
     }
 
     pub fn dealloc_block(&self, block_id: usize) {
-        self.data_bitmap.dealloc(block_id, self);
+        let slot = block_id - self.data_area_start;
+        self.data_bitmap.dealloc(slot, self);
     }
 
     fn get_root_inode() {
