@@ -7,12 +7,14 @@ use crate::block_cache::BlockCacheManager;
 use crate::block_cache::BlockCache;
 use crate::bitmap::Bitmap;
 use core::mem::MaybeUninit;
+use crate::efs::EasyFileSystem;
 
 const EASY_FS_MAGIC: u32 = 0x666;
 const INODE_DIRECT_COUNT: usize = 28;
 const INODE_INDIRECT_COUNT: usize = BLOCK_SIZE / core::mem::size_of::<u32>();
 
 const MAX_FILE_SIZE: usize = (INODE_DIRECT_COUNT + INODE_INDIRECT_COUNT + INODE_INDIRECT_COUNT.pow(2)) * BLOCK_SIZE;
+const MAX_NAME_LENGTH: usize = 27;
 
 type IndirectBlock = [u32; INODE_INDIRECT_COUNT];
 
@@ -26,29 +28,6 @@ pub struct SuperBlock {
     pub data_area_blocks: u32,
 }
 
-pub struct BlockAllocator<'bitmap> {
-    area_start: usize,
-    bitmap: &'bitmap Bitmap,
-}
-
-impl<'bitmap> BlockAllocator<'bitmap> {
-    pub fn new(area_start: usize, bitmap: &'bitmap Bitmap) -> Self {
-        Self {
-            area_start,
-            bitmap,
-        }
-    }
-
-    pub fn alloc<'a, 'b>(&'a self, cache_mgr: &'b mut BlockCacheManager) -> Option<&'b Arc<BlockCache>> {
-        let slot = self.bitmap.alloc(cache_mgr)?;
-        cache_mgr.get_block(self.area_start + slot).into()
-    }
-
-    pub fn dealloc(&self, block_id: usize, cache_mgr: &mut BlockCacheManager) {
-        self.bitmap.dealloc(block_id.checked_sub(self.area_start).unwrap(), cache_mgr);
-    }
-}
-
 // 32 * 4 = 128 bytes
 #[derive(Debug, Clone)]
 #[repr(C)]
@@ -56,12 +35,12 @@ pub struct DiskInode {
     pub size: u32,
     pub direct: [u32; INODE_DIRECT_COUNT],
     pub indirect: [u32; 2],
-    ty: DiskInodeType,
+    ty: InodeType,
 }
 
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DiskInodeType {
+pub enum InodeType {
     File = 1,
     Directory = 2,
 }
@@ -88,7 +67,7 @@ impl InnerId {
 }
 
 impl DiskInode {
-    pub fn new(ty: DiskInodeType) -> Self {
+    pub fn new(ty: InodeType) -> Self {
         Self {
             size: 0,
             direct: Default::default(),
@@ -98,18 +77,18 @@ impl DiskInode {
     }
 
     pub fn file() -> Self {
-        Self::new(DiskInodeType::File)
+        Self::new(InodeType::File)
     }
 
     pub fn directory() -> Self {
-        Self::new(DiskInodeType::Directory)
+        Self::new(InodeType::Directory)
     }
 
     fn blocks_for_size(size: u32) -> usize {
         (size as usize).div_ceil(BLOCK_SIZE)
     }
 
-    pub fn resize(&mut self, new_size: u32, block_allocator: &BlockAllocator, cache_mgr: &mut BlockCacheManager) {
+    pub fn resize(&mut self, new_size: u32, fs: &EasyFileSystem) {
         assert!(new_size as usize <= MAX_FILE_SIZE, "file size limit exceeded");
 
         let new_blocks = Self::blocks_for_size(new_size);
@@ -117,21 +96,21 @@ impl DiskInode {
         if self.size < new_size {
             if self.size > 0 {
                 // clear pass-the-end data at last block
-                let last_block = cache_mgr.get_block(old_blocks - 1);
+                let last_block = fs.get_block(old_blocks - 1);
                 let last_pos = self.size as usize % BLOCK_SIZE;
                 let f = |b: &mut Block| b[last_pos..].fill(0);
                 unsafe { last_block.modify(0, f) }
             }
             for inner_id in old_blocks..new_blocks {
-                let new_block = block_allocator.alloc(cache_mgr).expect("cannot alloc more blocks");
+                let new_block = fs.alloc_block().expect("cannot alloc more blocks");
                 let f = |b: &mut Block| b.fill(0);
                 unsafe { new_block.modify(0, f) };
-                self.set_block_id(inner_id, new_block.block_id() as u32, block_allocator, cache_mgr);
+                self.set_block_id(inner_id, new_block.block_id() as u32, fs);
             }
         } else if self.size > new_size {
             for inner_id in new_blocks..old_blocks {
-                let deallocated = self.set_block_id(inner_id, 0, block_allocator, cache_mgr);
-                block_allocator.dealloc(deallocated as usize, cache_mgr);
+                let deallocated = self.set_block_id(inner_id, 0, fs);
+                fs.dealloc_block(deallocated as usize);
             }
 
             let new_last_block = InnerId::new(new_blocks - 1);
@@ -141,43 +120,44 @@ impl DiskInode {
             use InnerId::*;
             match (new_last_block, old_last_block) {
                 (Direct(_), Indirect1(_)) => {
-                    block_allocator.dealloc(self.indirect[0] as usize, cache_mgr);
+                    fs.dealloc_block(self.indirect[0] as usize);
                     self.indirect[0] = 0;
                 }
                 (Indirect2(begin, _), Indirect2(end, _)) if begin < end => {
-                    let indirect2 = Arc::clone(cache_mgr.get_block(self.indirect[1] as usize));
+                    let indirect2 = fs.get_block(self.indirect[1] as usize);
                     let f = |indirect2: &mut IndirectBlock| {
                         for i in (begin + 1)..=end {
-                            block_allocator.dealloc(indirect2[i] as usize, cache_mgr);
+                            fs.dealloc_block(indirect2[i] as usize);
                             indirect2[i] = 0;
                         }
                     };
                     unsafe { indirect2.modify(0, f) }
                 }
                 (Indirect1(_), Indirect2(indirect2_blocks, _)) => {
-                    let indirect2 = Arc::clone(cache_mgr.get_block(self.indirect[1] as usize));
+                    // let indirect2 = Arc::clone(cache_mgr.get_block(self.indirect[1] as usize));
+                    let indirect2 = fs.get_block(self.indirect[1] as usize);
                     let f = |indirect2: &mut IndirectBlock| {
                         for i in 0..=indirect2_blocks {
-                            block_allocator.dealloc(indirect2[i] as usize, cache_mgr);
+                            fs.dealloc_block(indirect2[i] as usize);
                             indirect2[i] = 0;
                         }
                     };
                     unsafe { indirect2.modify(0, f) }
-                    block_allocator.dealloc(self.indirect[1] as usize, cache_mgr);
+                    fs.dealloc_block(self.indirect[1] as usize);
                     self.indirect[1] = 0;
                 }
                 (Direct(_), Indirect2(indirect2_blocks, _)) => {
-                    let indirect2 = Arc::clone(cache_mgr.get_block(self.indirect[1] as usize));
+                    let indirect2 = fs.get_block(self.indirect[1] as usize);
                     let f = |indirect2: &mut IndirectBlock| {
                         for i in 0..=indirect2_blocks {
-                            block_allocator.dealloc(indirect2[i] as usize, cache_mgr);
+                            fs.dealloc_block(indirect2[i] as usize);
                             indirect2[i] = 0;
                         }
                     };
                     unsafe { indirect2.modify(0, f) }
-                    block_allocator.dealloc(self.indirect[0] as usize, cache_mgr);
+                    fs.dealloc_block(self.indirect[0] as usize);
                     self.indirect[0] = 0;
-                    block_allocator.dealloc(self.indirect[1] as usize, cache_mgr);
+                    fs.dealloc_block(self.indirect[1] as usize);
                     self.indirect[1] = 0;
                 }
                 _ => (),
@@ -190,7 +170,7 @@ impl DiskInode {
         &self,
         offset: usize,
         buf: &mut [u8], 
-        cache_mgr: &mut BlockCacheManager,
+        fs: &EasyFileSystem,
     ) -> usize {
         let start_inner_id = offset / BLOCK_SIZE;
         let start_offset = offset % BLOCK_SIZE;
@@ -200,8 +180,8 @@ impl DiskInode {
         let mut buf_start = 0;
         let mut remain = (self.size as usize).saturating_sub(offset);
         while buf_start < buf.len() && remain > 0 {
-            let block_id = self.get_block_id(inner_id, cache_mgr);
-            let block = cache_mgr.get_block(block_id as usize);
+            let block_id = self.get_block_id(inner_id, fs);
+            let block = fs.get_block(block_id as usize);
             let f = |b: &Block| {
                 let n = {
                     let v = cmp::min(buf[buf_start..].len(), BLOCK_SIZE - block_start);
@@ -225,10 +205,9 @@ impl DiskInode {
         &mut self,
         offset: usize,
         data: &[u8], 
-        block_allocator: &BlockAllocator,
-        cache_mgr: &mut BlockCacheManager,
+        fs: &EasyFileSystem,
     ) {
-        self.resize((offset + data.len()) as u32, block_allocator, cache_mgr);
+        self.resize((offset + data.len()) as u32, fs);
         let start_inner_id = offset / BLOCK_SIZE;
         let start_offset = offset % BLOCK_SIZE;
 
@@ -236,8 +215,8 @@ impl DiskInode {
         let mut block_start = start_offset;
         let mut data_start = 0;
         while data_start < data.len() {
-            let block_id = self.get_block_id(inner_id, cache_mgr);
-            let block = cache_mgr.get_block(block_id as usize);
+            let block_id = self.get_block_id(inner_id, fs);
+            let block = fs.get_block(block_id as usize);
             let f = |b: &mut Block| {
                 let data_end = data_start + cmp::min(data[data_start..].len(), BLOCK_SIZE - block_start);
                 let block_end = block_start + data_end - data_start;
@@ -250,23 +229,23 @@ impl DiskInode {
         }
     }
 
-    pub fn get_block_id(&self, inner_id: usize, cache_mgr: &mut BlockCacheManager) -> u32 {
+    pub fn get_block_id(&self, inner_id: usize, fs: &EasyFileSystem) -> u32 {
         match InnerId::new(inner_id) {
             InnerId::Direct(id) => {
                 self.direct[id]
             }
             InnerId::Indirect1(id) => {
-                let indirect1 = cache_mgr.get_block(self.indirect[0] as usize);
+                let indirect1 = fs.get_block(self.indirect[0] as usize);
                 let f = |indirect1: &IndirectBlock| indirect1[id];
                 // SAFETY: arbitrary initialized data would be valid for this type
                 unsafe { indirect1.read(0, f) }
             }
             InnerId::Indirect2(id1, id2) => {
                 let indirect2 = {
-                    let indirect1 = cache_mgr.get_block(self.indirect[0] as usize);
+                    let indirect1 = fs.get_block(self.indirect[0] as usize);
                     let f = |indirect1: &IndirectBlock| indirect1[id1];
                     let indirect2_block_id = unsafe { indirect1.read(0, f) };
-                    cache_mgr.get_block(indirect2_block_id as usize)
+                    fs.get_block(indirect2_block_id as usize)
                 };
                 let f = |indirect2: &IndirectBlock| indirect2[id2];
                 unsafe { indirect2.read(0, f) }
@@ -274,16 +253,16 @@ impl DiskInode {
         }
     }
 
-    pub fn set_block_id(&mut self, inner_id: usize, block_id: u32, block_allocator: &BlockAllocator, cache_mgr: &mut BlockCacheManager) -> u32 {
+    pub fn set_block_id(&mut self, inner_id: usize, block_id: u32, fs: &EasyFileSystem) -> u32 {
         match InnerId::new(inner_id) {
             InnerId::Direct(id) => {
                 mem::replace(&mut self.direct[id], block_id)
             }
             InnerId::Indirect1(id) => {
                 let indirect1 = if self.indirect[0] != 0 {
-                    cache_mgr.get_block(self.indirect[0] as usize)
+                    fs.get_block(self.indirect[0] as usize)
                 } else {
-                    block_allocator.alloc(cache_mgr).expect("we run out of blocks. QAQ")
+                    fs.alloc_block().expect("we run out of blocks. QAQ")
                 };
                 let f = |indirect1: &mut IndirectBlock| mem::replace(&mut indirect1[id], block_id);
                 // SAFETY: arbitrary initialized data would be valid for this type
@@ -291,133 +270,21 @@ impl DiskInode {
             }
             InnerId::Indirect2(id1, id2) => {
                 let indirect2 = {
-                    let indirect1 = cache_mgr.get_block(self.indirect[0] as usize);
+                    let indirect1 = fs.get_block(self.indirect[0] as usize);
                     let f = |indirect1: &IndirectBlock| indirect1[id1];
                     let indirect2_block_id = unsafe { indirect1.read(0, f) };
-                    cache_mgr.get_block(indirect2_block_id as usize)
+                    fs.get_block(indirect2_block_id as usize)
                 };
                 let f = |indirect2: &mut IndirectBlock| mem::replace(&mut indirect2[id2], block_id);
                 unsafe { indirect2.modify(0, f) }
             }
         }
     }
-
 }
 
-pub struct Inode {
-    block_id: usize,
-    offset: usize,
+#[repr(C)]
+pub struct DirEntry {
+    name: [u8; MAX_NAME_LENGTH + 1],
+    inode_id: u32,
 }
 
-impl Inode {
-    #[track_caller]
-    pub fn new(block_id: usize, offset: usize) -> Self {
-        assert!(offset % core::mem::size_of::<DiskInode>() == 0, "offset doesn't align");
-
-        Self {
-            block_id,
-            offset,
-        }
-    }
-
-    pub fn create(block_id: usize, offset: usize, ty: DiskInodeType, cache_mgr: &mut BlockCacheManager) -> Self {
-        assert!(offset % core::mem::size_of::<DiskInode>() == 0, "offset doesn't align");
-
-        let block = cache_mgr.get_block(block_id);
-        let f = |di: &mut MaybeUninit<DiskInode>| {
-            di.write(DiskInode::new(ty));
-        };
-        block.modify_maybe_uninit(offset, f);
-        Self {
-            block_id,
-            offset,
-        }
-    }
-
-    pub fn create_file(block_id: usize, offset: usize, cache_mgr: &mut BlockCacheManager) -> Self {
-        Self::create(block_id, offset, DiskInodeType::File, cache_mgr)
-    }
-
-    pub fn create_dir(block_id: usize, offset: usize, cache_mgr: &mut BlockCacheManager) -> Self {
-        Self::create(block_id, offset, DiskInodeType::Directory, cache_mgr)
-    }
-
-    pub unsafe fn size(&self, cache_mgr: &mut BlockCacheManager) -> usize {
-        let block = cache_mgr.get_block(self.block_id);
-        let f = |di: &DiskInode| {
-            di.size as usize
-        };
-        block.read(self.offset, f)
-    }
-
-    pub unsafe fn resize(&self, new_size: u32, block_allocator: &BlockAllocator, cache_mgr: &mut BlockCacheManager) {
-        let block = Arc::clone(cache_mgr.get_block(self.block_id));
-        let f = |di: &mut DiskInode| {
-            di.resize(new_size, block_allocator, cache_mgr);
-        };
-        block.modify(self.offset, f);
-    }
-
-    pub unsafe fn read_at(&self, offset: usize, buf: &mut [u8], cache_mgr: &mut BlockCacheManager) -> usize {
-        let block = Arc::clone(cache_mgr.get_block(self.block_id));
-        let f = |di: &DiskInode| {
-            di.read_at(offset, buf, cache_mgr)
-        };
-        block.read(self.offset, f)
-    }
-
-    pub unsafe fn write_at(&self, offset: usize, data: &[u8], block_allocator: &BlockAllocator, cache_mgr: &mut BlockCacheManager) {
-        let block = Arc::clone(cache_mgr.get_block(self.block_id));
-        let f = |di: &mut DiskInode| {
-            di.write_at(offset, data, block_allocator, cache_mgr)
-        };
-        block.modify(self.offset, f);
-    }
-}
-
-
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::block_cache::tests::setup;
-
-    #[test]
-    fn inode_basic() {
-        let (_block_dev, mut cache_mgr) = setup();
-        let bitmap = Bitmap::new(0, 10);
-        let block_allocator = BlockAllocator::new(10, &bitmap);
-
-        let inode_block = block_allocator.alloc(&mut cache_mgr).unwrap();
-        let inode = Inode::create_file(inode_block.block_id(), 0, &mut cache_mgr);
-
-        let data = b"hello, world!";
-        let mut buf = [0; 13];
-        unsafe {
-            inode.write_at(510, data, &block_allocator, &mut cache_mgr);
-            inode.read_at(510, &mut buf, &mut cache_mgr);
-        }
-        assert_eq!(data, &buf);
-        assert_eq!(unsafe { inode.size(&mut cache_mgr) }, 523);
-    }
-
-    #[test]
-    fn inode_read_over_bound() {
-        let (_block_dev, mut cache_mgr) = setup();
-        let bitmap = Bitmap::new(0, 10);
-        let block_allocator = BlockAllocator::new(10, &bitmap);
-
-        let inode_block = block_allocator.alloc(&mut cache_mgr).unwrap();
-        let inode = Inode::create_file(inode_block.block_id(), 0, &mut cache_mgr);
-
-        let data = b"hello, world!";
-        let mut buf = [0; 13];
-        unsafe {
-            inode.write_at(0, data, &block_allocator, &mut cache_mgr);
-            assert_eq!(inode.read_at(13, &mut buf, &mut cache_mgr), 0);
-            assert_eq!(inode.read_at(1, &mut buf, &mut cache_mgr), 12);
-        }
-        assert_eq!(&buf[..12], &data[1..]);
-    }
-
-}

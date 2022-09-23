@@ -2,7 +2,7 @@ use crate::{
     block_dev::BlockDevice,
     BLOCK_SIZE,
     block_cache::BlockCacheManager,
-
+    efs::EasyFileSystem,
 };
 
 
@@ -23,10 +23,28 @@ impl Bitmap {
         }
     }
 
-    pub fn alloc(&self, cache_mgr: &mut BlockCacheManager) -> Option<usize> {
+
+    pub fn is_allocated(&self, slot: usize, fs: &EasyFileSystem) -> bool {
+        let bit_pos = slot % u64::BITS as usize;
+        let u64_pos = slot % BLOCK_BITS / 64;
+        let block_pos = slot / BLOCK_BITS;
+
+        if block_pos >= self.size {
+            panic!("try to check a slot that is out of the bitmap");
+        }
+        let block = fs.get_block(self.start_block + block_pos);
+        let f = |bitmap: &BitmapBlock| {
+            bitmap[u64_pos as usize] & (1 << bit_pos) != 0
+        };
+        unsafe {
+            block.read(0, f)
+        }
+    }
+
+    pub fn alloc(&self, fs: &EasyFileSystem) -> Option<usize> {
         for block_pos in 0..self.size {
             let block_id = self.start_block + block_pos;
-            let block = cache_mgr.get_block(block_id);
+            let block = fs.get_block(block_id);
             let f = |bitmap: &mut BitmapBlock| {
                 bitmap
                     .iter_mut()
@@ -49,15 +67,15 @@ impl Bitmap {
         None
     }
 
-    pub fn dealloc(&self, slot: usize, cache_mgr: &mut BlockCacheManager) {
+    pub fn dealloc(&self, slot: usize, fs: &EasyFileSystem) {
         let bit_pos = slot % u64::BITS as usize;
         let u64_pos = slot % BLOCK_BITS / 64;
         let block_pos = slot / BLOCK_BITS;
 
         if block_pos >= self.size {
-            panic!("try to dealloc a block offset that is out of the bitmap");
+            panic!("try to dealloc a slot that is out of the bitmap");
         }
-        let block = cache_mgr.get_block(self.start_block + block_pos);
+        let block = fs.get_block(self.start_block + block_pos);
         let f = |bitmap: &mut BitmapBlock| {
             assert!(bitmap[u64_pos as usize] & (1 << bit_pos) != 0);
             bitmap[u64_pos as usize] &= !(1 << bit_pos);

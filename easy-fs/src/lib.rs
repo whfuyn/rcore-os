@@ -5,6 +5,7 @@ mod block_dev;
 mod block_cache;
 mod layout;
 mod efs;
+mod vfs;
 mod bitmap;
 
 extern crate alloc;

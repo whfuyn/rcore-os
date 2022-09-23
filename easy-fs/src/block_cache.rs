@@ -49,8 +49,7 @@ impl BlockCacheInner {
 
         let ptr = addr_of!(self.buf[offset]) as *const MaybeUninit<T>;
         let t = unsafe { ptr.read_unaligned() };
-        let ret = f(&t);
-        ret
+        f(&t)
     }
 
     fn modify_maybe_uninit<T, V>(&mut self, offset: usize, f: impl FnOnce(&mut MaybeUninit<T>) -> V) -> V {
