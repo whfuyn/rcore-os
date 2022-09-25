@@ -139,8 +139,8 @@ pub struct BlockCacheManager {
 }
 
 impl BlockCacheManager {
-    fn new<T: BlockDevice>(dev: T) -> Self {
-        BlockCacheManager { caches: VecDeque::new(), block_dev: Arc::new(dev) }
+    pub fn new<T: BlockDevice>(block_dev: T) -> Self {
+        BlockCacheManager { caches: VecDeque::new(), block_dev: Arc::new(block_dev) }
     }
 
     // Return &Arc to allow user to decide whether to clone it or not.

@@ -9,7 +9,7 @@ use crate::bitmap::Bitmap;
 use core::mem::MaybeUninit;
 use crate::efs::EasyFileSystem;
 
-const EASY_FS_MAGIC: u32 = 0x666;
+pub const EASY_FS_MAGIC: u32 = 0xf1f1f1f1;
 const INODE_DIRECT_COUNT: usize = 28;
 const INODE_INDIRECT_COUNT: usize = BLOCK_SIZE / core::mem::size_of::<u32>();
 
@@ -18,6 +18,7 @@ const MAX_NAME_LENGTH: usize = 27;
 
 type IndirectBlock = [u32; INODE_INDIRECT_COUNT];
 
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct SuperBlock {
     magic: u32,
@@ -28,6 +29,33 @@ pub struct SuperBlock {
     pub data_area_blocks: u32,
 }
 
+impl SuperBlock {
+    pub fn new(
+        total_blocks: u32,
+        inode_bitmap_blocks: u32,
+        inode_area_blocks: u32,
+        data_bitmap_blocks: u32,
+        data_area_blocks: u32,
+    ) -> Self {
+        let it = Self {
+            magic: EASY_FS_MAGIC,
+            total_blocks,
+            inode_bitmap_blocks,
+            inode_area_blocks,
+            data_bitmap_blocks,
+            data_area_blocks,
+        };
+        assert!(it.validate(), "insufficient total blocks");
+        it
+    }
+
+    pub fn validate(&self) -> bool {
+        let sum = self.inode_bitmap_blocks + self.inode_area_blocks + self.data_bitmap_blocks + self.data_area_blocks + 1;
+        self.total_blocks < sum && self.magic == EASY_FS_MAGIC
+    }
+
+}
+
 // 32 * 4 = 128 bytes
 #[derive(Debug, Clone)]
 #[repr(C)]
@@ -35,7 +63,7 @@ pub struct DiskInode {
     pub size: u32,
     pub direct: [u32; INODE_DIRECT_COUNT],
     pub indirect: [u32; 2],
-    ty: InodeType,
+    pub ty: InodeType,
 }
 
 #[repr(u32)]
