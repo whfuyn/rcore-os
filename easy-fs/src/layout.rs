@@ -320,6 +320,13 @@ pub struct DirEntry {
 }
 
 impl DirEntry {
+    pub fn empty() -> Self {
+        Self {
+            name: [0; MAX_NAME_LENGTH + 1],
+            inode_id: 0,
+        }
+    }
+
     pub fn new(name: &str, inode_id: u32) -> Self {
         assert!(
             name.len() <= MAX_NAME_LENGTH,
@@ -339,12 +346,16 @@ impl DirEntry {
         CStr::from_bytes_until_nul(&self.name).unwrap().to_str().unwrap()
     }
 
+    pub fn inode_id(&self) -> u32 {
+        self.inode_id
+    }
+
     pub fn as_bytes(&self) -> &[u8; 32] {
         unsafe { core::mem::transmute(self) }
     }
 
-    pub fn from_bytes(buf: &[u8; 32]) -> &Self {
-        unsafe { core::mem::transmute(buf) }
+    pub fn as_bytes_mut(&mut self) -> &mut [u8; 32] {
+        unsafe { core::mem::transmute(self) }
     }
 }
 

@@ -8,13 +8,11 @@ use crate::block_cache::BlockCache;
 use crate::block_cache::BlockCacheManager;
 use spin::Mutex;
 use alloc::sync::Arc;
-use alloc::sync::Weak;
 use alloc::collections::BTreeMap;
 
 const DISK_INODE_SIZE: usize = mem::size_of::<DiskInode>();
 const DISK_INODES_IN_BLOCK: usize = BLOCK_SIZE / DISK_INODE_SIZE;
 
-#[derive(Clone)]
 pub struct Inode {
     id: u32,
     fs: Arc<EasyFileSystem>,
@@ -34,19 +32,23 @@ impl Inode {
     }
 
     pub fn resize(&self, new_size: u32) {
-        self.modify_disk_inode(|di: &mut DiskInode, fs: &EasyFileSystem| {
+        self.modify_disk_inode(|di, fs| {
             di.resize(new_size, fs)
         });
     }
 
+    pub fn delete(self) {
+        self.fs.delete_inode(self.id);
+    }
+
     pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> usize {
-        self.read_disk_inode(|di: &DiskInode, fs: &EasyFileSystem| {
+        self.read_disk_inode(|di, fs| {
             di.read_at(offset, buf, fs)
         })
     }
 
     pub fn write_at(&self, offset: usize, data: &[u8]) {
-        self.modify_disk_inode(|di: &mut DiskInode, fs: &EasyFileSystem| {
+        self.modify_disk_inode(|di, fs| {
             di.write_at(offset, data, fs)
         });
     }
@@ -61,8 +63,8 @@ impl Inode {
         self.fs.modify_disk_inode(self.id, g)
     }
 
-    pub fn delete(self) {
-        self.fs.delete_inode(self.id);
+    pub fn fs(&self) -> &Arc<EasyFileSystem> {
+        &self.fs
     }
 }
 
@@ -184,6 +186,7 @@ impl EasyFileSystem {
 
     pub fn open_inode(self: &Arc<Self>, inode_id: u32) -> Option<Inode> {
         let mut open_inodes = self.open_inodes.lock();
+
         use alloc::collections::btree_map::Entry;
         match open_inodes.entry(inode_id) {
             Entry::Occupied(mut occupied) => {
@@ -224,6 +227,10 @@ impl EasyFileSystem {
 
     pub fn delete_inode(&self, inode_id: u32) {
         let mut open_inodes = self.open_inodes.lock();
+        // Doing the check with the open_inodes lock to avoid double-free.
+        if !self.inode_bitmap.is_allocated(inode_id as usize, self) {
+            return;
+        }
         // Insert a delete record to avoid opening the deleted node.
         let record = open_inodes
             .entry(inode_id)
