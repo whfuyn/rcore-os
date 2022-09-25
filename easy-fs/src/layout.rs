@@ -257,7 +257,7 @@ impl DiskInode {
         }
     }
 
-    pub fn get_block_id(&self, inner_id: usize, fs: &EasyFileSystem) -> u32 {
+    fn get_block_id(&self, inner_id: usize, fs: &EasyFileSystem) -> u32 {
         match InnerId::new(inner_id) {
             InnerId::Direct(id) => {
                 self.direct[id]
@@ -281,7 +281,7 @@ impl DiskInode {
         }
     }
 
-    pub fn set_block_id(&mut self, inner_id: usize, block_id: u32, fs: &EasyFileSystem) -> u32 {
+    fn set_block_id(&mut self, inner_id: usize, block_id: u32, fs: &EasyFileSystem) -> u32 {
         match InnerId::new(inner_id) {
             InnerId::Direct(id) => {
                 mem::replace(&mut self.direct[id], block_id)
@@ -310,9 +310,41 @@ impl DiskInode {
     }
 }
 
+pub const DIR_ENTRY_SIZE: usize = core::mem::size_of::<DirEntry>();
+
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct DirEntry {
     name: [u8; MAX_NAME_LENGTH + 1],
     inode_id: u32,
+}
+
+impl DirEntry {
+    pub fn new(name: &str, inode_id: u32) -> Self {
+        assert!(
+            name.len() <= MAX_NAME_LENGTH,
+            "entry name too long",
+        );
+        let mut name_buf = [0; MAX_NAME_LENGTH + 1];
+        name_buf[..name.len()].copy_from_slice(name.as_bytes());
+        name_buf[name.len()] = 0;
+        Self {
+            name: name_buf,
+            inode_id,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        use core::ffi::CStr;
+        CStr::from_bytes_until_nul(&self.name).unwrap().to_str().unwrap()
+    }
+
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        unsafe { core::mem::transmute(self) }
+    }
+
+    pub fn from_bytes(buf: &[u8; 32]) -> &Self {
+        unsafe { core::mem::transmute(buf) }
+    }
 }
 

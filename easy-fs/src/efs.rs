@@ -16,44 +16,49 @@ const DISK_INODES_IN_BLOCK: usize = BLOCK_SIZE / DISK_INODE_SIZE;
 
 #[derive(Clone)]
 pub struct Inode {
-    id: usize,
+    id: u32,
     fs: Arc<EasyFileSystem>,
 }
 
 impl Inode {
+    pub fn id(&self) -> u32 {
+        self.id
+    }
+
     pub fn ty(&self) -> InodeType {
-        let f = |di: &DiskInode| {
-            di.ty
-        };
-        self.fs.read_disk_inode(self.id, f)
+        self.read_disk_inode(|di, _| di.ty)
     }
 
     pub fn size(&self) -> usize {
-        let f = |di: &DiskInode| {
-            di.size as usize
-        };
-        self.fs.read_disk_inode(self.id, f)
+        self.read_disk_inode(|di, _|  di.size as usize )
     }
 
     pub fn resize(&self, new_size: u32) {
-        let f = |di: &mut DiskInode| {
-            di.resize(new_size, &self.fs);
-        };
-        self.fs.modify_disk_inode(self.id, f);
+        self.modify_disk_inode(|di: &mut DiskInode, fs: &EasyFileSystem| {
+            di.resize(new_size, fs)
+        });
     }
 
     pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> usize {
-        let f = |di: &DiskInode| {
-            di.read_at(offset, buf, &self.fs)
-        };
-        self.fs.read_disk_inode(self.id, f)
+        self.read_disk_inode(|di: &DiskInode, fs: &EasyFileSystem| {
+            di.read_at(offset, buf, fs)
+        })
     }
 
     pub fn write_at(&self, offset: usize, data: &[u8]) {
-        let f = |di: &mut DiskInode| {
-            di.write_at(offset, data, &self.fs)
-        };
-        self.fs.modify_disk_inode(self.id, f);
+        self.modify_disk_inode(|di: &mut DiskInode, fs: &EasyFileSystem| {
+            di.write_at(offset, data, fs)
+        });
+    }
+
+    pub fn read_disk_inode<V>(&self, f: impl FnOnce(&DiskInode, &EasyFileSystem) -> V) -> V {
+        let g = |di: &DiskInode| f(di, &self.fs);
+        self.fs.read_disk_inode(self.id, g)
+    }
+
+    pub fn modify_disk_inode<V>(&self, f: impl FnOnce(&mut DiskInode, &EasyFileSystem) -> V) -> V {
+        let g = |di: &mut DiskInode| f(di, &self.fs);
+        self.fs.modify_disk_inode(self.id, g)
     }
 
     pub fn delete(self) {
@@ -78,7 +83,7 @@ pub struct EasyFileSystem {
     data_area_start: usize,
     data_bitmap: Bitmap,
 
-    open_inodes: Mutex<BTreeMap<usize, OpenInodeRecord>>,
+    open_inodes: Mutex<BTreeMap<u32, OpenInodeRecord>>,
     cache_mgr: Arc<Mutex<BlockCacheManager>>,
 }
 
@@ -123,7 +128,7 @@ impl EasyFileSystem {
         Self::new(cache_mgr, inode_bitmap_blocks, inode_area_blocks, data_bitmap_blocks)
     }
 
-    pub fn load(cache_mgr: Arc<Mutex<BlockCacheManager>>) -> Result<Self, Arc<Mutex<BlockCacheManager>>> {
+    pub fn open(cache_mgr: Arc<Mutex<BlockCacheManager>>) -> Result<Self, Arc<Mutex<BlockCacheManager>>> {
         let super_block_cache = Arc::clone(cache_mgr.lock().get_block(0));
         let f = |b: &SuperBlock| b.clone();
         let sblk = unsafe { super_block_cache.read(0, f) };
@@ -146,17 +151,16 @@ impl EasyFileSystem {
         inode_block.modify_maybe_uninit(inode_offset, f);
 
         Inode {
-            id: inode_id,
+            id: inode_id as u32,
             fs: Arc::clone(self),
         }.into()
     }
 
-    fn dealloc_inode(&self, inode_id: usize) {
+    fn dealloc_inode(&self, inode_id: u32) {
         let f = |di: &mut DiskInode| di.resize(0, self);
         self.modify_disk_inode(inode_id, f);
 
-        let slot = inode_id - self.inode_area_start;
-        self.inode_bitmap.dealloc(slot, self);
+        self.inode_bitmap.dealloc(inode_id as usize, self);
     }
 
     pub fn get_block(&self, block_id: usize) -> Arc<BlockCache> {
@@ -178,7 +182,7 @@ impl EasyFileSystem {
         self.data_bitmap.dealloc(slot, self);
     }
 
-    pub fn open_inode(self: &Arc<Self>, inode_id: usize) -> Option<Inode> {
+    pub fn open_inode(self: &Arc<Self>, inode_id: u32) -> Option<Inode> {
         let mut open_inodes = self.open_inodes.lock();
         use alloc::collections::btree_map::Entry;
         match open_inodes.entry(inode_id) {
@@ -190,7 +194,7 @@ impl EasyFileSystem {
                 record.ref_count += 1;
             }
             Entry::Vacant(vacant) => {
-                if !self.inode_bitmap.is_allocated(inode_id, self) {
+                if !self.inode_bitmap.is_allocated(inode_id as usize, self) {
                     return None;
                 }
                 vacant.insert(OpenInodeRecord { ref_count: 1, pending_delete: false });
@@ -203,7 +207,7 @@ impl EasyFileSystem {
         }.into()
     }
 
-    pub fn close_inode(&self, inode_id: usize) {
+    fn close_inode(&self, inode_id: u32) {
         let mut open_inodes = self.open_inodes.lock();
         let record = open_inodes.get_mut(&inode_id).expect("try to close a file that isn't opened");
         record.ref_count -= 1;
@@ -218,7 +222,7 @@ impl EasyFileSystem {
         }
     }
 
-    pub fn delete_inode(&self, inode_id: usize) {
+    pub fn delete_inode(&self, inode_id: u32) {
         let mut open_inodes = self.open_inodes.lock();
         // Insert a delete record to avoid opening the deleted node.
         let record = open_inodes
@@ -232,21 +236,22 @@ impl EasyFileSystem {
         }
     }
 
-    fn get_disk_inode_index(&self, inode_id: usize) -> (usize, usize) {
+    fn get_disk_inode_index(&self, inode_id: u32) -> (usize, usize) {
+        let inode_id = inode_id as usize;
         let di_block_id = self.inode_area_start + inode_id / DISK_INODES_IN_BLOCK;
         let di_offset = inode_id % DISK_INODES_IN_BLOCK * DISK_INODE_SIZE;
         (di_block_id, di_offset)
     }
 
-    fn read_disk_inode<V>(&self, inode_id: usize, f: impl FnOnce(&DiskInode) -> V) -> V {
-        assert!(self.inode_bitmap.is_allocated(inode_id, self));
+    fn read_disk_inode<V>(&self, inode_id: u32, f: impl FnOnce(&DiskInode) -> V) -> V {
+        assert!(self.inode_bitmap.is_allocated(inode_id as usize, self));
         let (block_id, offset) = self.get_disk_inode_index(inode_id);
         let block = self.get_block(block_id);
         unsafe { block.read(offset, f) }
     }
 
-    fn modify_disk_inode<V>(&self, inode_id: usize, f: impl FnOnce(&mut DiskInode) -> V) -> V {
-        assert!(self.inode_bitmap.is_allocated(inode_id, self));
+    fn modify_disk_inode<V>(&self, inode_id: u32, f: impl FnOnce(&mut DiskInode) -> V) -> V {
+        assert!(self.inode_bitmap.is_allocated(inode_id as usize, self));
         let (block_id, offset) = self.get_disk_inode_index(inode_id);
         let block = self.get_block(block_id);
         unsafe { block.modify(offset, f) }

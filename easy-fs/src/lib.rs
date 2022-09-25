@@ -1,5 +1,6 @@
 #![cfg_attr(not(test), no_std)]
 #![feature(int_roundings)]
+#![feature(cstr_from_bytes_until_nul)]
 
 mod block_dev;
 mod block_cache;
