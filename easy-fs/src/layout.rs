@@ -8,6 +8,7 @@ use crate::block_cache::BlockCache;
 use crate::bitmap::Bitmap;
 use core::mem::MaybeUninit;
 use crate::efs::EasyFileSystem;
+use bitflags::bitflags;
 
 pub const EASY_FS_MAGIC: u32 = 0xf1f1f1f1;
 const INODE_DIRECT_COUNT: usize = 28;
@@ -66,11 +67,34 @@ pub struct DiskInode {
     pub ty: InodeType,
 }
 
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InodeType {
-    File = 1,
-    Directory = 2,
+// Don't use rust enum for this type.
+// Data on disk might be corrupted, and transmuting a invalid value to
+// rust enum is UB.
+bitflags! {
+    #[repr(transparent)]
+    pub struct InodeType: u32 {
+        const FILE = 1;
+        const DIRECTORY = 2;
+    }
+}
+
+impl InodeType {
+    pub fn validate(self) {
+        assert!(
+            self == Self::FILE || self == Self::DIRECTORY,
+            "invalid inode type. Data might be corrupted",
+        );
+    }
+
+    pub fn is_file(self) -> bool {
+        self.validate();
+        self == Self::FILE
+    }
+
+    pub fn is_dir(self) -> bool {
+        self.validate();
+        self == Self::DIRECTORY
+    }
 }
 
 enum InnerId {
@@ -105,11 +129,11 @@ impl DiskInode {
     }
 
     pub fn file() -> Self {
-        Self::new(InodeType::File)
+        Self::new(InodeType::FILE)
     }
 
     pub fn directory() -> Self {
-        Self::new(InodeType::Directory)
+        Self::new(InodeType::DIRECTORY)
     }
 
     fn blocks_for_size(size: u32) -> usize {

@@ -7,3 +7,4 @@ edition = "2021"
 [dependencies]
 spin = "0.9"
 lazy_static = "1.4"
+bitflags = "1.3"

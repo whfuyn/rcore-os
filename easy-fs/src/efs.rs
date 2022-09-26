@@ -13,7 +13,7 @@ use alloc::collections::BTreeMap;
 const DISK_INODE_SIZE: usize = mem::size_of::<DiskInode>();
 const DISK_INODES_IN_BLOCK: usize = BLOCK_SIZE / DISK_INODE_SIZE;
 
-pub struct Inode {
+pub(crate) struct Inode {
     id: u32,
     fs: Arc<EasyFileSystem>,
 }
@@ -37,10 +37,6 @@ impl Inode {
         });
     }
 
-    pub fn delete(self) {
-        self.fs.delete_inode(self.id);
-    }
-
     pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> usize {
         self.read_disk_inode(|di, fs| {
             di.read_at(offset, buf, fs)
@@ -53,12 +49,12 @@ impl Inode {
         });
     }
 
-    pub fn read_disk_inode<V>(&self, f: impl FnOnce(&DiskInode, &EasyFileSystem) -> V) -> V {
+    pub fn read_disk_inode<V>(&self, f: impl FnOnce(&DiskInode, &Arc<EasyFileSystem>) -> V) -> V {
         let g = |di: &DiskInode| f(di, &self.fs);
         self.fs.read_disk_inode(self.id, g)
     }
 
-    pub fn modify_disk_inode<V>(&self, f: impl FnOnce(&mut DiskInode, &EasyFileSystem) -> V) -> V {
+    pub fn modify_disk_inode<V>(&self, f: impl FnOnce(&mut DiskInode, &Arc<EasyFileSystem>) -> V) -> V {
         let g = |di: &mut DiskInode| f(di, &self.fs);
         self.fs.modify_disk_inode(self.id, g)
     }
@@ -141,7 +137,8 @@ impl EasyFileSystem {
         }
     }
 
-    pub fn alloc_inode(self: &Arc<Self>, ty: InodeType) -> Option<Inode> {
+    pub(crate) fn alloc_inode(self: &Arc<Self>, ty: InodeType) -> Option<Inode> {
+        let mut open_inodes = self.open_inodes.lock();
         let inode_id = self.inode_bitmap.alloc(self)?;
         let inode_block_id = self.inode_area_start + inode_id / DISK_INODES_IN_BLOCK;
         let inode_offset = inode_id % DISK_INODES_IN_BLOCK * DISK_INODE_SIZE;
@@ -151,6 +148,11 @@ impl EasyFileSystem {
             di.write(DiskInode::new(ty));
         };
         inode_block.modify_maybe_uninit(inode_offset, f);
+        assert!(
+            open_inodes
+                .insert(inode_id as u32, OpenInodeRecord { ref_count: 1, pending_delete: false })
+                .is_none()
+        );
 
         Inode {
             id: inode_id as u32,
@@ -165,7 +167,7 @@ impl EasyFileSystem {
         self.inode_bitmap.dealloc(inode_id as usize, self);
     }
 
-    pub fn get_block(&self, block_id: usize) -> Arc<BlockCache> {
+    pub(crate) fn get_block(&self, block_id: usize) -> Arc<BlockCache> {
         if !self.data_bitmap.is_allocated(block_id, self) {
             panic!("block isn't allocated");
         }
@@ -174,17 +176,17 @@ impl EasyFileSystem {
         Arc::clone(cache_mgr.get_block(block_id))
     }
 
-    pub fn alloc_block(&self) -> Option<Arc<BlockCache>> {
+    pub(crate) fn alloc_block(&self) -> Option<Arc<BlockCache>> {
         let block_id = self.data_area_start + self.data_bitmap.alloc(self)?;
         self.get_block(block_id).into()
     }
 
-    pub fn dealloc_block(&self, block_id: usize) {
+    pub(crate) fn dealloc_block(&self, block_id: usize) {
         let slot = block_id - self.data_area_start;
         self.data_bitmap.dealloc(slot, self);
     }
 
-    pub fn open_inode(self: &Arc<Self>, inode_id: u32) -> Option<Inode> {
+    pub(crate) fn open_inode(self: &Arc<Self>, inode_id: u32) -> Option<Inode> {
         let mut open_inodes = self.open_inodes.lock();
 
         use alloc::collections::btree_map::Entry;
@@ -225,7 +227,7 @@ impl EasyFileSystem {
         }
     }
 
-    pub fn delete_inode(&self, inode_id: u32) {
+    pub(crate) fn delete_inode(&self, inode_id: u32) {
         let mut open_inodes = self.open_inodes.lock();
         // Doing the check with the open_inodes lock to avoid double-free.
         if !self.inode_bitmap.is_allocated(inode_id as usize, self) {

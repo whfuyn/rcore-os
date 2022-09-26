@@ -11,5 +11,12 @@ mod bitmap;
 
 extern crate alloc;
 
-pub const BLOCK_SIZE: usize = 512;
-pub type Block = [u8; BLOCK_SIZE];
+pub(crate) const BLOCK_SIZE: usize = 512;
+pub(crate) type Block = [u8; BLOCK_SIZE];
+
+pub use block_dev::BlockDevice;
+pub use block_cache::BlockCacheManager;
+pub use efs::EasyFileSystem;
+pub use vfs::{
+    File, Directory, Error, Result
+};
