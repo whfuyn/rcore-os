@@ -5,6 +5,7 @@ use alloc::vec::Vec;
 use alloc::string::String;
 use alloc::string::ToString;
 
+#[derive(Debug)]
 pub enum Error {
     AlreadyExists,
     AllocInodeFailed,
@@ -52,6 +53,22 @@ pub enum FileOrDirectory {
     Directory(Directory),
 }
 
+impl FileOrDirectory {
+    pub fn file(self) -> File {
+        match self {
+            Self::File(file) => file,
+            _ => panic!("not a file"),
+        }
+    }
+
+    pub fn directory(self) -> Directory {
+        match self {
+            Self::Directory(dir) => dir,
+            _ => panic!("not a directory"),
+        }
+    }
+}
+
 pub struct File(Inode);
 
 impl File {
@@ -91,80 +108,95 @@ impl Directory {
     }
 
     pub fn create_file(&self, name: &str) -> Result<File> {
-        self.0.modify_disk_inode(|di, fs| {
-            let mut entry_buf = DirEntry::empty();
-            let existing_inode = Self::find_entry_inode_id(name, &mut entry_buf, di, fs)
+        let mut entry_buf = DirEntry::empty();
+
+        let existing_inode = self.0.read_disk_inode(|di, fs| {
+            Self::find_entry_inode_id(name, &mut entry_buf, di, fs)
                 .map(|inode_id| {
                     fs.open_inode(inode_id).expect("DirEntry's inode is missing")
-                });
-            if let Some(inode) = existing_inode {
-                if inode.is_dir() {
-                    return Err(Error::IsDir);
-                } else {
-                    inode.resize(0);
-                    Ok(File(inode))
-                }
+                })
+        });
+        if let Some(inode) = existing_inode {
+            if inode.is_dir() {
+                return Err(Error::IsDir);
             } else {
-                let new_inode = fs
-                    .alloc_inode(InodeType::FILE)
-                    .ok_or(Error::AllocInodeFailed)?;
-                entry_buf = DirEntry::new(name, new_inode.id());
-                let end = di.size as usize;
-                di.write_at(end, entry_buf.as_bytes(), fs);
-                Ok(File(new_inode))
+                inode.resize(0);
+                Ok(File(inode))
             }
-        })
-    }
-
-    pub fn create_dir(&self, name: &str) -> Result<Directory> {
-        self.0.modify_disk_inode(|di, fs| {
-            let mut entry_buf = DirEntry::empty();
-            if Self::find_entry_inode_id(name, &mut entry_buf, di, fs).is_some() {
-                return Err(Error::AlreadyExists);
-            }
-            let new_inode = fs
+        } else {
+            let new_inode = self.0.fs()
                 .alloc_inode(InodeType::FILE)
                 .ok_or(Error::AllocInodeFailed)?;
             entry_buf = DirEntry::new(name, new_inode.id());
+            self.0.modify_disk_inode(|di, fs| {
+                let end = di.size as usize;
+                di.write_at(end, entry_buf.as_bytes(), fs);
+            });
+            Ok(File(new_inode))
+        }
+    }
+
+    pub fn create_dir(&self, name: &str) -> Result<Directory> {
+        let mut entry_buf = DirEntry::empty();
+        self.0.read_disk_inode(|di, fs| {
+            if Self::find_entry_offset(name, &mut entry_buf, di, fs).is_some() {
+                return Err(Error::AlreadyExists);
+            }
+            Ok(())
+        })?;
+
+        let new_inode = self.0.fs()
+            .alloc_inode(InodeType::DIRECTORY)
+            .ok_or(Error::AllocInodeFailed)?;
+        entry_buf = DirEntry::new(name, new_inode.id());
+        self.0.modify_disk_inode(|di, fs| {
             let end = di.size as usize;
             di.write_at(end, entry_buf.as_bytes(), fs);
-            Ok(Directory(new_inode))
-        })
+        });
+        Ok(Directory(new_inode))
     }
 
     pub fn remove_file(&self, name: &str) -> Result<()> {
+        let mut entry_buf = DirEntry::empty();
+        let target_entry_offset = self.0.read_disk_inode(|di, fs| {
+            Self::find_entry_offset(name, &mut entry_buf, di, fs)
+                .ok_or(Error::NotFound)
+        })?;
+
+        let target_inode_id = entry_buf.inode_id();
+        let target_inode = self.0.fs().open_inode(target_inode_id).expect("DirEntry's inode is missing");
+        if target_inode.is_dir() {
+            return Err(Error::IsDir);
+        }
+
         self.0.modify_disk_inode(|di, fs| {
-            let mut entry_buf = DirEntry::empty();
-            let target_entry_offset = Self::find_entry_offset(name, &mut entry_buf, di, fs)
-                .ok_or(Error::NotFound)?;
-            let target_inode_id = entry_buf.inode_id();
-            let target_inode = fs.open_inode(target_inode_id).expect("DirEntry's inode is missing");
-            if target_inode.is_dir() {
-                return Err(Error::IsDir);
-            }
             Self::remove_entry(target_entry_offset, &mut entry_buf, di, fs);
-            fs.delete_inode(target_inode_id);
-            Ok(())
-        })
+        });
+        self.0.fs().delete_inode(target_inode_id);
+        Ok(())
     }
 
     pub fn remove_dir(&self, name: &str) -> Result<()> {
+        let mut entry_buf = DirEntry::empty();
+        let target_entry_offset = self.0.read_disk_inode(|di, fs| {
+            Self::find_entry_offset(name, &mut entry_buf, di, fs)
+                .ok_or(Error::NotFound)
+        })?;
+
+        let target_inode_id = entry_buf.inode_id();
+        let target_inode = self.0.fs().open_inode(target_inode_id).unwrap();
+        if target_inode.is_file() {
+            return Err(Error::IsFile);
+        }
+        if target_inode.size() > 0 {
+            return Err(Error::NotEmpty);
+        }
+
         self.0.modify_disk_inode(|di, fs| {
-            let mut entry_buf = DirEntry::empty();
-            let target_entry_offset = Self::find_entry_offset(name, &mut entry_buf, di, fs)
-                .ok_or(Error::NotFound)?;
-            let target_inode_id = entry_buf.inode_id();
-            let target_inode = fs.open_inode(target_inode_id).unwrap();
-            if target_inode.is_file() {
-                return Err(Error::IsFile);
-            }
-            if target_inode.size() > 0 {
-                return Err(Error::NotEmpty);
-            }
             Self::remove_entry(target_entry_offset, &mut entry_buf, di, fs);
-            fs.delete_inode(target_inode_id);
-            Ok(())
-        })
+        });
+        self.0.fs().delete_inode(target_inode_id);
+        Ok(())
     }
 
     pub fn list(&self) -> Vec<String> {
@@ -180,6 +212,19 @@ impl Directory {
             }
             file_names
         })
+    }
+
+    fn read_entry(offset: usize, entry_buf: &mut DirEntry, di: &DiskInode, fs: &EasyFileSystem) {
+        assert_eq!(di.read_at(offset, entry_buf.as_bytes_mut(), fs), DIR_ENTRY_SIZE);
+    }
+
+    fn remove_entry(target_entry_offset: usize, entry_buf: &mut DirEntry, di: &mut DiskInode, fs: &EasyFileSystem) {
+        let last_entry_offset = di.size as usize - DIR_ENTRY_SIZE;
+        assert!(last_entry_offset % DIR_ENTRY_SIZE == 0);
+        Self::read_entry(last_entry_offset, entry_buf, di, fs);
+
+        di.write_at(target_entry_offset, entry_buf.as_bytes(), fs);
+        di.resize(last_entry_offset as u32, fs);
     }
 
     fn find_entry_inode_id(name: &str, entry_buf: &mut DirEntry, di: &DiskInode, fs: &EasyFileSystem) -> Option<u32> {
@@ -199,17 +244,47 @@ impl Directory {
         }
         None
     }
+}
 
-    fn read_entry(offset: usize, entry_buf: &mut DirEntry, di: &DiskInode, fs: &EasyFileSystem) {
-        assert_eq!(di.read_at(offset, entry_buf.as_bytes_mut(), fs), DIR_ENTRY_SIZE);
-    }
 
-    fn remove_entry(target_entry_offset: usize, entry_buf: &mut DirEntry, di: &mut DiskInode, fs: &EasyFileSystem) {
-        let last_entry_offset = di.size as usize - DIR_ENTRY_SIZE;
-        assert!(last_entry_offset % DIR_ENTRY_SIZE == 0);
-        Self::read_entry(last_entry_offset, entry_buf, di, fs);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::efs::tests::setup;
 
-        di.write_at(target_entry_offset, entry_buf.as_bytes(), fs);
-        di.resize(last_entry_offset as u32, fs);
+    #[test]
+    fn vfs_basic() -> Result<()> {
+        let fs = setup();
+        let root_dir = fs.create_root_dir()?;
+
+        let data = b"hello";
+        let mut buf = [0; 5];
+
+        let a = root_dir.create_file("a")?;
+        a.write_at(0, data);
+
+        drop(a);
+
+        let a = root_dir.open("a").unwrap().file();
+        assert_eq!(a.read_at(0, &mut buf), 5);
+        assert_eq!(&buf, data);
+
+        drop(a);
+
+        let a = root_dir.open("a").unwrap().file();
+        assert_eq!(a.read_at(0, &mut buf), 5);
+        assert_eq!(&buf, data);
+
+        root_dir.remove_file("a")?;
+        assert!(root_dir.open("a").is_none());
+
+        let b = root_dir.create_dir("b")?;
+        let _c = b.create_file("c")?;
+
+        assert!(root_dir.remove_dir("b").is_err());
+        b.remove_file("c")?;
+        root_dir.remove_dir("b")?;
+
+        Ok(())
     }
 }

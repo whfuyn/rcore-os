@@ -182,29 +182,6 @@ impl BlockCacheManager {
     }
 }
 
-// pub static BLOCK_CACHE_MANAGER: Once<Mutex<BlockCacheManager>> = Once::new();
-
-// fn block_cache_manager() -> MutexGuard<'static, BlockCacheManager> {
-//     if let Some(mgr) = BLOCK_CACHE_MANAGER.get() {
-//         mgr.lock()
-//     } else {
-//         panic!("Block cache isn't initialized");
-//     }
-
-// }
-
-// pub fn init_block_cache<T: BlockDevice>(block_dev: T) {
-//     BLOCK_CACHE_MANAGER.call_once(|| Mutex::new(BlockCacheManager::new(block_dev)));
-// }
-
-// pub fn get_block_cache(block_id: usize) -> Arc<BlockCache> {
-//     Arc::clone(block_cache_manager().get_cache(block_id))
-// }
-
-// pub fn flush_block_cache() {
-//     block_cache_manager().flush();
-// }
-
 #[cfg(test)]
 pub mod tests {
     use super::*;

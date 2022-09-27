@@ -18,5 +18,5 @@ pub use block_dev::BlockDevice;
 pub use block_cache::BlockCacheManager;
 pub use efs::EasyFileSystem;
 pub use vfs::{
-    File, Directory, Error, Result
+    File, Directory, FileOrDirectory, Error, Result
 };
