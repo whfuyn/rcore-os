@@ -1,13 +1,13 @@
+use crate::block_dev::BlockDevice;
 use crate::Block;
 use crate::BLOCK_SIZE;
-use crate::block_dev::BlockDevice;
-use alloc::sync::Arc;
 use alloc::collections::VecDeque;
-use spin::Mutex;
-use spin::MutexGuard;
+use alloc::sync::Arc;
 use core::mem::MaybeUninit;
 use core::ptr::addr_of;
 use core::ptr::addr_of_mut;
+use spin::Mutex;
+use spin::MutexGuard;
 
 const BLOCK_CACHE_SIZE: usize = 1 << 4;
 
@@ -26,17 +26,13 @@ impl BlockCacheInner {
     /// Safety:
     /// - Data at target offset must be valid for type T.
     unsafe fn read<T, V>(&self, offset: usize, f: impl FnOnce(&T) -> V) -> V {
-        self.read_maybe_uninit(offset, |r| {
-            f(r.assume_init_ref())
-        })
+        self.read_maybe_uninit(offset, |r| f(r.assume_init_ref()))
     }
 
     /// Safety:
     /// - Data at target offset must be valid for type T.
     unsafe fn modify<T, V>(&mut self, offset: usize, f: impl FnOnce(&mut T) -> V) -> V {
-        self.modify_maybe_uninit(offset, |r| {
-            f(r.assume_init_mut())
-        })
+        self.modify_maybe_uninit(offset, |r| f(r.assume_init_mut()))
     }
 
     fn read_maybe_uninit<T, V>(&self, offset: usize, f: impl FnOnce(&MaybeUninit<T>) -> V) -> V {
@@ -50,7 +46,11 @@ impl BlockCacheInner {
         f(&t)
     }
 
-    fn modify_maybe_uninit<T, V>(&mut self, offset: usize, f: impl FnOnce(&mut MaybeUninit<T>) -> V) -> V {
+    fn modify_maybe_uninit<T, V>(
+        &mut self,
+        offset: usize,
+        f: impl FnOnce(&mut MaybeUninit<T>) -> V,
+    ) -> V {
         let type_size = core::mem::size_of::<T>();
         if offset + type_size > BLOCK_SIZE {
             panic!("out of boundary when trying to modify block cache");
@@ -114,11 +114,19 @@ impl BlockCache {
         self.inner.lock().modify(offset, f)
     }
 
-    pub fn read_maybe_uninit<T, V>(&self, offset: usize, f: impl FnOnce(&MaybeUninit<T>) -> V) -> V {
+    pub fn read_maybe_uninit<T, V>(
+        &self,
+        offset: usize,
+        f: impl FnOnce(&MaybeUninit<T>) -> V,
+    ) -> V {
         self.inner.lock().read_maybe_uninit(offset, f)
     }
 
-    pub fn modify_maybe_uninit<T, V>(&self, offset: usize, f: impl FnOnce(&mut MaybeUninit<T>) -> V) -> V {
+    pub fn modify_maybe_uninit<T, V>(
+        &self,
+        offset: usize,
+        f: impl FnOnce(&mut MaybeUninit<T>) -> V,
+    ) -> V {
         self.inner.lock().modify_maybe_uninit(offset, f)
     }
 }
@@ -138,13 +146,17 @@ pub struct BlockCacheManager {
 
 impl BlockCacheManager {
     pub fn new<T: BlockDevice>(block_dev: T) -> Self {
-        BlockCacheManager { caches: VecDeque::new(), block_dev: Arc::new(block_dev) }
+        BlockCacheManager {
+            caches: VecDeque::new(),
+            block_dev: Arc::new(block_dev),
+        }
     }
 
     // Return &Arc to allow user to decide whether to clone it or not.
     fn put_block(&mut self, cache: BlockCache) -> &Arc<BlockCache> {
         if self.caches.len() >= BLOCK_CACHE_SIZE {
-            let evicted_pos = self.caches
+            let evicted_pos = self
+                .caches
                 .iter()
                 .position(|c| Arc::strong_count(c) == 1)
                 .expect("out of block cache slots");
@@ -161,10 +173,7 @@ impl BlockCacheManager {
     }
 
     pub fn get_block(&mut self, block_id: usize) -> &Arc<BlockCache> {
-        if let Some(idx) = self.caches
-            .iter()
-            .position(|b| b.block_id == block_id)
-        {
+        if let Some(idx) = self.caches.iter().position(|b| b.block_id == block_id) {
             return &self.caches[idx];
         }
         let cache = {
@@ -175,7 +184,7 @@ impl BlockCacheManager {
         self.put_block(cache)
     }
 
-    pub fn flush(&self)  {
+    pub fn flush(&self) {
         self.caches.iter().for_each(|c| c.flush());
     }
 }

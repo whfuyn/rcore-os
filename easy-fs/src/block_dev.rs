@@ -20,16 +20,16 @@ pub mod tests {
 
     impl TestBlockDevice {
         pub fn new() -> Self {
-            Self { blocks: Arc::new(Mutex::new(BTreeMap::new())) }
+            Self {
+                blocks: Arc::new(Mutex::new(BTreeMap::new())),
+            }
         }
     }
 
     impl BlockDevice for TestBlockDevice {
         fn read_block(&self, block_id: usize, buf: &mut Block) {
             let mut blocks = self.blocks.lock();
-            let block = blocks
-                .entry(block_id)
-                .or_insert_with(|| [0; BLOCK_SIZE]);
+            let block = blocks.entry(block_id).or_insert_with(|| [0; BLOCK_SIZE]);
             buf.copy_from_slice(block);
         }
 
@@ -56,4 +56,3 @@ pub mod tests {
         assert!(buf.iter().all(|&b| b == 6));
     }
 }
-

@@ -1,13 +1,13 @@
-use core::mem;
-use core::mem::MaybeUninit;
-use crate::BLOCK_SIZE;
-use crate::layout::*;
 use crate::bitmap::Bitmap;
 use crate::block_cache::BlockCache;
 use crate::block_cache::BlockCacheManager;
-use spin::Mutex;
-use alloc::sync::Arc;
+use crate::layout::*;
+use crate::BLOCK_SIZE;
 use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
+use core::mem;
+use core::mem::MaybeUninit;
+use spin::Mutex;
 
 const DISK_INODE_SIZE: usize = mem::size_of::<DiskInode>();
 const DISK_INODES_IN_BLOCK: usize = BLOCK_SIZE / DISK_INODE_SIZE;
@@ -27,25 +27,19 @@ impl Inode {
     }
 
     pub fn size(&self) -> usize {
-        self.read_disk_inode(|di, _|  di.size as usize )
+        self.read_disk_inode(|di, _| di.size as usize)
     }
 
     pub fn resize(&self, new_size: u32) {
-        self.modify_disk_inode(|di, fs| {
-            di.resize(new_size, fs)
-        });
+        self.modify_disk_inode(|di, fs| di.resize(new_size, fs));
     }
 
     pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> usize {
-        self.read_disk_inode(|di, fs| {
-            di.read_at(offset, buf, fs)
-        })
+        self.read_disk_inode(|di, fs| di.read_at(offset, buf, fs))
     }
 
     pub fn write_at(&self, offset: usize, data: &[u8]) {
-        self.modify_disk_inode(|di, fs| {
-            di.write_at(offset, data, fs)
-        });
+        self.modify_disk_inode(|di, fs| di.write_at(offset, data, fs));
     }
 
     pub fn read_disk_inode<V>(&self, f: impl FnOnce(&DiskInode, &Arc<EasyFileSystem>) -> V) -> V {
@@ -53,7 +47,10 @@ impl Inode {
         self.fs.read_disk_inode(self.id, g)
     }
 
-    pub fn modify_disk_inode<V>(&self, f: impl FnOnce(&mut DiskInode, &Arc<EasyFileSystem>) -> V) -> V {
+    pub fn modify_disk_inode<V>(
+        &self,
+        f: impl FnOnce(&mut DiskInode, &Arc<EasyFileSystem>) -> V,
+    ) -> V {
         let g = |di: &mut DiskInode| f(di, &self.fs);
         self.fs.modify_disk_inode(self.id, g)
     }
@@ -86,10 +83,10 @@ pub struct EasyFileSystem {
 
 impl EasyFileSystem {
     fn new(
-       cache_mgr: Arc<Mutex<BlockCacheManager>>, 
-       inode_bitmap_blocks: u32,
-       inode_area_blocks: u32,
-       data_bitmap_blocks: u32,
+        cache_mgr: Arc<Mutex<BlockCacheManager>>,
+        inode_bitmap_blocks: u32,
+        inode_area_blocks: u32,
+        data_bitmap_blocks: u32,
     ) -> Self {
         let inode_bitmap_start = 1;
         let inode_bitmap = Bitmap::new(inode_bitmap_start as usize, inode_bitmap_blocks as usize);
@@ -109,7 +106,7 @@ impl EasyFileSystem {
     }
 
     pub fn create(
-        cache_mgr: Arc<Mutex<BlockCacheManager>>, 
+        cache_mgr: Arc<Mutex<BlockCacheManager>>,
         total_blocks: u32,
         inode_bitmap_blocks: u32,
         inode_area_blocks: u32,
@@ -118,19 +115,37 @@ impl EasyFileSystem {
     ) -> Self {
         let super_block_cache = Arc::clone(cache_mgr.lock().get_block(0));
         let f = |b: &mut MaybeUninit<SuperBlock>| {
-            b.write(SuperBlock::new(total_blocks, inode_bitmap_blocks, inode_area_blocks, data_bitmap_blocks, data_area_blocks));
+            b.write(SuperBlock::new(
+                total_blocks,
+                inode_bitmap_blocks,
+                inode_area_blocks,
+                data_bitmap_blocks,
+                data_area_blocks,
+            ));
         };
         super_block_cache.modify_maybe_uninit(0, f);
 
-        Self::new(cache_mgr, inode_bitmap_blocks, inode_area_blocks, data_bitmap_blocks)
+        Self::new(
+            cache_mgr,
+            inode_bitmap_blocks,
+            inode_area_blocks,
+            data_bitmap_blocks,
+        )
     }
 
-    pub fn open(cache_mgr: Arc<Mutex<BlockCacheManager>>) -> Result<Self, Arc<Mutex<BlockCacheManager>>> {
+    pub fn open(
+        cache_mgr: Arc<Mutex<BlockCacheManager>>,
+    ) -> Result<Self, Arc<Mutex<BlockCacheManager>>> {
         let super_block_cache = Arc::clone(cache_mgr.lock().get_block(0));
         let f = |b: &SuperBlock| *b;
         let sblk = unsafe { super_block_cache.read(0, f) };
         if sblk.validate() {
-            Ok(Self::new(cache_mgr, sblk.inode_bitmap_blocks, sblk.inode_area_blocks, sblk.data_bitmap_blocks))
+            Ok(Self::new(
+                cache_mgr,
+                sblk.inode_bitmap_blocks,
+                sblk.inode_area_blocks,
+                sblk.data_bitmap_blocks,
+            ))
         } else {
             Err(cache_mgr)
         }
@@ -149,23 +164,29 @@ impl EasyFileSystem {
             di.write(DiskInode::new(ty));
         };
         inode_block.modify_maybe_uninit(inode_offset, f);
-        assert!(
-            open_inodes
-                .insert(inode_id as u32, OpenInodeRecord { ref_count: 1, pending_delete: false })
-                .is_none()
-        );
+        assert!(open_inodes
+            .insert(
+                inode_id as u32,
+                OpenInodeRecord {
+                    ref_count: 1,
+                    pending_delete: false
+                }
+            )
+            .is_none());
 
         Inode {
             id: inode_id as u32,
             fs: Arc::clone(self),
-        }.into()
+        }
+        .into()
     }
 
     fn dealloc_inode(&self, inode_id: u32) {
         let f = |di: &mut DiskInode| di.resize(0, self);
         self.modify_disk_inode(inode_id, f);
 
-        self.inode_bitmap.dealloc(inode_id as usize, &mut self.cache_mgr.lock());
+        self.inode_bitmap
+            .dealloc(inode_id as usize, &mut self.cache_mgr.lock());
     }
 
     pub(crate) fn get_block(&self, block_id: usize) -> Arc<BlockCache> {
@@ -202,22 +223,31 @@ impl EasyFileSystem {
                 record.ref_count += 1;
             }
             Entry::Vacant(vacant) => {
-                if !self.inode_bitmap.is_allocated(inode_id as usize, &mut self.cache_mgr.lock()) {
+                if !self
+                    .inode_bitmap
+                    .is_allocated(inode_id as usize, &mut self.cache_mgr.lock())
+                {
                     return None;
                 }
-                vacant.insert(OpenInodeRecord { ref_count: 1, pending_delete: false });
+                vacant.insert(OpenInodeRecord {
+                    ref_count: 1,
+                    pending_delete: false,
+                });
             }
         }
 
         Inode {
             id: inode_id,
             fs: Arc::clone(self),
-        }.into()
+        }
+        .into()
     }
 
     fn close_inode(&self, inode_id: u32) {
         let mut open_inodes = self.open_inodes.lock();
-        let record = open_inodes.get_mut(&inode_id).expect("try to close a file that isn't opened");
+        let record = open_inodes
+            .get_mut(&inode_id)
+            .expect("try to close a file that isn't opened");
         record.ref_count -= 1;
         if record.ref_count == 0 && record.pending_delete {
             // Release lock when we are reclaiming the space used by the deleted inode.
@@ -231,13 +261,17 @@ impl EasyFileSystem {
     pub(crate) fn delete_inode(&self, inode_id: u32) {
         let mut open_inodes = self.open_inodes.lock();
         // Doing the check with the open_inodes lock to avoid double-free.
-        if !self.inode_bitmap.is_allocated(inode_id as usize, &mut self.cache_mgr.lock()) {
+        if !self
+            .inode_bitmap
+            .is_allocated(inode_id as usize, &mut self.cache_mgr.lock())
+        {
             return;
         }
         // Insert a delete record to avoid opening the deleted node.
-        let record = open_inodes
-            .entry(inode_id)
-            .or_insert(OpenInodeRecord{ ref_count: 0, pending_delete: true});
+        let record = open_inodes.entry(inode_id).or_insert(OpenInodeRecord {
+            ref_count: 0,
+            pending_delete: true,
+        });
         record.pending_delete = true;
         if record.ref_count == 0 {
             drop(open_inodes);
@@ -255,7 +289,9 @@ impl EasyFileSystem {
 
     fn read_disk_inode<V>(&self, inode_id: u32, f: impl FnOnce(&DiskInode) -> V) -> V {
         let mut cache_mgr = self.cache_mgr.lock();
-        assert!(self.inode_bitmap.is_allocated(inode_id as usize, &mut cache_mgr));
+        assert!(self
+            .inode_bitmap
+            .is_allocated(inode_id as usize, &mut cache_mgr));
 
         let (block_id, offset) = self.get_disk_inode_index(inode_id);
         let block = Arc::clone(cache_mgr.get_block(block_id));
@@ -265,7 +301,9 @@ impl EasyFileSystem {
 
     fn modify_disk_inode<V>(&self, inode_id: u32, f: impl FnOnce(&mut DiskInode) -> V) -> V {
         let mut cache_mgr = self.cache_mgr.lock();
-        assert!(self.inode_bitmap.is_allocated(inode_id as usize, &mut cache_mgr));
+        assert!(self
+            .inode_bitmap
+            .is_allocated(inode_id as usize, &mut cache_mgr));
 
         let (block_id, offset) = self.get_disk_inode_index(inode_id);
         let block = Arc::clone(cache_mgr.get_block(block_id));
@@ -274,7 +312,6 @@ impl EasyFileSystem {
     }
 }
 
-
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -282,14 +319,7 @@ pub mod tests {
 
     pub fn setup() -> Arc<EasyFileSystem> {
         let (_block_dev, cache_mgr) = block_cache_setup();
-        let efs = EasyFileSystem::create(
-            Arc::new(Mutex::new(cache_mgr)),
-            100,
-            1,
-            49,
-            1,
-            49,
-        );
+        let efs = EasyFileSystem::create(Arc::new(Mutex::new(cache_mgr)), 100, 1, 49, 1, 49);
         Arc::new(efs)
     }
 
@@ -333,5 +363,4 @@ pub mod tests {
     //     }
     //     assert_eq!(&buf[..12], &data[1..]);
     // }
-
 }

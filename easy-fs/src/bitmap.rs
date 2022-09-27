@@ -1,8 +1,4 @@
-use crate::{
-    BLOCK_SIZE,
-    block_cache::BlockCacheManager,
-};
-
+use crate::{block_cache::BlockCacheManager, BLOCK_SIZE};
 
 const BLOCK_BITS: usize = BLOCK_SIZE * 8;
 
@@ -15,12 +11,8 @@ pub struct Bitmap {
 
 impl Bitmap {
     pub fn new(start_block: usize, size: usize) -> Self {
-        Self {
-            start_block,
-            size,
-        }
+        Self { start_block, size }
     }
-
 
     pub fn is_allocated(&self, slot: usize, cache_mgr: &mut BlockCacheManager) -> bool {
         let bit_pos = slot % u64::BITS as usize;
@@ -31,12 +23,8 @@ impl Bitmap {
             panic!("try to check a slot that is out of the bitmap");
         }
         let block = cache_mgr.get_block(self.start_block + block_pos);
-        let f = |bitmap: &BitmapBlock| {
-            bitmap[u64_pos as usize] & (1 << bit_pos) != 0
-        };
-        unsafe {
-            block.read(0, f)
-        }
+        let f = |bitmap: &BitmapBlock| bitmap[u64_pos as usize] & (1 << bit_pos) != 0;
+        unsafe { block.read(0, f) }
     }
 
     pub fn alloc(&self, cache_mgr: &mut BlockCacheManager) -> Option<usize> {
@@ -44,19 +32,16 @@ impl Bitmap {
             let block_id = self.start_block + block_pos;
             let block = cache_mgr.get_block(block_id);
             let f = |bitmap: &mut BitmapBlock| {
-                bitmap
-                    .iter_mut()
-                    .enumerate()
-                    .find_map(|(u64_pos, b)|
-                        if *b != u64::MAX {
-                            let bit_pos = b.trailing_ones() as usize;
-                            // *b |= *b + 1;
-                            *b |= 1 << bit_pos;
-                            Some(u64_pos * u64::BITS as usize + bit_pos)
-                        } else {
-                            None
-                        }
-                    )
+                bitmap.iter_mut().enumerate().find_map(|(u64_pos, b)| {
+                    if *b != u64::MAX {
+                        let bit_pos = b.trailing_ones() as usize;
+                        // *b |= *b + 1;
+                        *b |= 1 << bit_pos;
+                        Some(u64_pos * u64::BITS as usize + bit_pos)
+                    } else {
+                        None
+                    }
+                })
             };
             if let Some(inner_pos) = unsafe { block.modify(0, f) } {
                 return Some(block_pos * BLOCK_BITS + inner_pos as usize);
@@ -117,4 +102,3 @@ mod tests {
     //     assert_eq!(u64::from_le_bytes(buf[8..16].try_into().unwrap()), u64::MAX - 1);
     // }
 }
-

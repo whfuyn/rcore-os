@@ -1,14 +1,15 @@
-use core::mem;
-use core::cmp;
-use crate::{BLOCK_SIZE, Block};
 use crate::efs::EasyFileSystem;
+use crate::{Block, BLOCK_SIZE};
 use bitflags::bitflags;
+use core::cmp;
+use core::mem;
 
 pub const EASY_FS_MAGIC: u32 = 0xf1f1f1f1;
 const INODE_DIRECT_COUNT: usize = 28;
 const INODE_INDIRECT_COUNT: usize = BLOCK_SIZE / core::mem::size_of::<u32>();
 
-const MAX_FILE_SIZE: usize = (INODE_DIRECT_COUNT + INODE_INDIRECT_COUNT + INODE_INDIRECT_COUNT.pow(2)) * BLOCK_SIZE;
+const MAX_FILE_SIZE: usize =
+    (INODE_DIRECT_COUNT + INODE_INDIRECT_COUNT + INODE_INDIRECT_COUNT.pow(2)) * BLOCK_SIZE;
 const MAX_NAME_LENGTH: usize = 27;
 
 type IndirectBlock = [u32; INODE_INDIRECT_COUNT];
@@ -45,10 +46,13 @@ impl SuperBlock {
     }
 
     pub fn validate(&self) -> bool {
-        let sum = self.inode_bitmap_blocks + self.inode_area_blocks + self.data_bitmap_blocks + self.data_area_blocks + 1;
+        let sum = self.inode_bitmap_blocks
+            + self.inode_area_blocks
+            + self.data_bitmap_blocks
+            + self.data_area_blocks
+            + 1;
         self.total_blocks < sum && self.magic == EASY_FS_MAGIC
     }
-
 }
 
 // 32 * 4 = 128 bytes
@@ -103,7 +107,9 @@ impl InnerIndex {
             Self::Direct(inner_id)
         } else if inner_id <= INODE_DIRECT_COUNT + INODE_INDIRECT_COUNT {
             Self::Indirect1(inner_id - INODE_DIRECT_COUNT)
-        } else if inner_id <= INODE_DIRECT_COUNT + INODE_INDIRECT_COUNT + INODE_INDIRECT_COUNT.pow(2) {
+        } else if inner_id
+            <= INODE_DIRECT_COUNT + INODE_INDIRECT_COUNT + INODE_INDIRECT_COUNT.pow(2)
+        {
             let idx = inner_id - INODE_DIRECT_COUNT - INODE_INDIRECT_COUNT;
             Self::Indirect2(idx / INODE_INDIRECT_COUNT, idx % INODE_INDIRECT_COUNT)
         } else {
@@ -127,7 +133,10 @@ impl DiskInode {
     }
 
     pub fn resize(&mut self, new_size: u32, fs: &EasyFileSystem) {
-        assert!(new_size as usize <= MAX_FILE_SIZE, "file size limit exceeded");
+        assert!(
+            new_size as usize <= MAX_FILE_SIZE,
+            "file size limit exceeded"
+        );
 
         let new_blocks = Self::blocks_for_size(new_size);
         let old_blocks = Self::blocks_for_size(self.size);
@@ -206,12 +215,7 @@ impl DiskInode {
         self.size = new_size;
     }
 
-    pub fn read_at(
-        &self,
-        offset: usize,
-        buf: &mut [u8], 
-        fs: &EasyFileSystem,
-    ) -> usize {
+    pub fn read_at(&self, offset: usize, buf: &mut [u8], fs: &EasyFileSystem) -> usize {
         let (start_inner_id, start_offset) = Self::offset_to_inner(offset);
 
         let mut inner_id = start_inner_id;
@@ -240,12 +244,7 @@ impl DiskInode {
         buf_start
     }
 
-    pub fn write_at(
-        &mut self,
-        offset: usize,
-        data: &[u8], 
-        fs: &EasyFileSystem,
-    ) {
+    pub fn write_at(&mut self, offset: usize, data: &[u8], fs: &EasyFileSystem) {
         self.resize((offset + data.len()) as u32, fs);
         let (start_inner_id, start_offset) = Self::offset_to_inner(offset);
 
@@ -256,7 +255,8 @@ impl DiskInode {
             let block_id = self.get_block_id(inner_id, fs);
             let block = fs.get_block(block_id as usize);
             let f = |b: &mut Block| {
-                let data_end = data_start + cmp::min(data[data_start..].len(), BLOCK_SIZE - block_start);
+                let data_end =
+                    data_start + cmp::min(data[data_start..].len(), BLOCK_SIZE - block_start);
                 let block_end = block_start + data_end - data_start;
                 b[block_start..block_end].copy_from_slice(&data[data_start..data_end]);
                 data_start = data_end
@@ -272,9 +272,7 @@ impl DiskInode {
             InnerIndex::Direct(0) => {
                 panic!("get block id underflow");
             }
-            InnerIndex::Direct(id) => {
-                self.direct[id - 1]
-            }
+            InnerIndex::Direct(id) => self.direct[id - 1],
             InnerIndex::Indirect1(id) => {
                 let indirect1 = fs.get_block(self.indirect[0] as usize);
                 let f = |indirect1: &IndirectBlock| indirect1[id - 1];
@@ -299,16 +297,15 @@ impl DiskInode {
             InnerIndex::Direct(0) => {
                 panic!("set block id underflow");
             }
-            InnerIndex::Direct(id) => {
-                mem::replace(&mut self.direct[id - 1], block_id)
-            }
+            InnerIndex::Direct(id) => mem::replace(&mut self.direct[id - 1], block_id),
             InnerIndex::Indirect1(id) => {
                 let indirect1 = if self.indirect[0] != 0 {
                     fs.get_block(self.indirect[0] as usize)
                 } else {
                     fs.alloc_block().expect("we run out of blocks. QAQ")
                 };
-                let f = |indirect1: &mut IndirectBlock| mem::replace(&mut indirect1[id - 1], block_id);
+                let f =
+                    |indirect1: &mut IndirectBlock| mem::replace(&mut indirect1[id - 1], block_id);
                 // SAFETY: arbitrary initialized data would be valid for this type
                 unsafe { indirect1.modify(0, f) }
             }
@@ -319,7 +316,8 @@ impl DiskInode {
                     let indirect2_block_id = unsafe { indirect1.read(0, f) };
                     fs.get_block(indirect2_block_id as usize)
                 };
-                let f = |indirect2: &mut IndirectBlock| mem::replace(&mut indirect2[id2 - 1], block_id);
+                let f =
+                    |indirect2: &mut IndirectBlock| mem::replace(&mut indirect2[id2 - 1], block_id);
                 unsafe { indirect2.modify(0, f) }
             }
         }
@@ -350,10 +348,7 @@ impl DirEntry {
     }
 
     pub fn new(name: &str, inode_id: u32) -> Self {
-        assert!(
-            name.len() <= MAX_NAME_LENGTH,
-            "entry name too long",
-        );
+        assert!(name.len() <= MAX_NAME_LENGTH, "entry name too long",);
         let mut name_buf = [0; MAX_NAME_LENGTH + 1];
         name_buf[..name.len()].copy_from_slice(name.as_bytes());
         name_buf[name.len()] = 0;
@@ -365,7 +360,10 @@ impl DirEntry {
 
     pub fn name(&self) -> &str {
         use core::ffi::CStr;
-        CStr::from_bytes_until_nul(&self.name).unwrap().to_str().unwrap()
+        CStr::from_bytes_until_nul(&self.name)
+            .unwrap()
+            .to_str()
+            .unwrap()
     }
 
     pub fn inode_id(&self) -> u32 {
@@ -380,4 +378,3 @@ impl DirEntry {
         unsafe { core::mem::transmute(self) }
     }
 }
-
