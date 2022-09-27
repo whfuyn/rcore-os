@@ -97,19 +97,19 @@ impl InodeType {
     }
 }
 
-enum InnerId {
+enum InnerIndex {
     Direct(usize),
     Indirect1(usize),
     Indirect2(usize, usize),
 }
 
-impl InnerId {
+impl InnerIndex {
     fn new(inner_id: usize) -> Self {
-        if inner_id < INODE_DIRECT_COUNT {
+        if inner_id <= INODE_DIRECT_COUNT {
             Self::Direct(inner_id)
-        } else if inner_id < INODE_DIRECT_COUNT + INODE_INDIRECT_COUNT {
+        } else if inner_id <= INODE_DIRECT_COUNT + INODE_INDIRECT_COUNT {
             Self::Indirect1(inner_id - INODE_DIRECT_COUNT)
-        } else if inner_id < INODE_DIRECT_COUNT + INODE_INDIRECT_COUNT + INODE_INDIRECT_COUNT.pow(2) {
+        } else if inner_id <= INODE_DIRECT_COUNT + INODE_INDIRECT_COUNT + INODE_INDIRECT_COUNT.pow(2) {
             let idx = inner_id - INODE_DIRECT_COUNT - INODE_INDIRECT_COUNT;
             Self::Indirect2(idx / INODE_INDIRECT_COUNT, idx % INODE_INDIRECT_COUNT)
         } else {
@@ -153,23 +153,25 @@ impl DiskInode {
                 let f = |b: &mut Block| b[last_pos..].fill(0);
                 unsafe { last_block.modify(0, f) }
             }
-            for inner_id in old_blocks..new_blocks {
+            for i in old_blocks..new_blocks {
+                let inner_id = 1 + i;
                 let new_block = fs.alloc_block().expect("cannot alloc more blocks");
                 let f = |b: &mut Block| b.fill(0);
                 unsafe { new_block.modify(0, f) };
                 self.set_block_id(inner_id, new_block.block_id() as u32, fs);
             }
         } else if self.size > new_size {
-            for inner_id in new_blocks..old_blocks {
+            for i in new_blocks..old_blocks {
+                let inner_id = 1 + i;
                 let deallocated = self.set_block_id(inner_id, 0, fs);
                 fs.dealloc_block(deallocated as usize);
             }
 
-            let new_last_block = InnerId::new(new_blocks - 1);
-            let old_last_block = InnerId::new(old_blocks - 1);
+            let new_last_block = InnerIndex::new(new_blocks);
+            let old_last_block = InnerIndex::new(old_blocks);
 
             // dealloc unused indirect blocks
-            use InnerId::*;
+            use InnerIndex::*;
             match (new_last_block, old_last_block) {
                 (Direct(_), Indirect1(_)) => {
                     fs.dealloc_block(self.indirect[0] as usize);
@@ -179,17 +181,16 @@ impl DiskInode {
                     let indirect2 = fs.get_block(self.indirect[1] as usize);
                     let f = |indirect2: &mut IndirectBlock| {
                         for i in (begin + 1)..=end {
-                            fs.dealloc_block(indirect2[i] as usize);
-                            indirect2[i] = 0;
+                            fs.dealloc_block(indirect2[i - 1] as usize);
+                            indirect2[i - 1] = 0;
                         }
                     };
                     unsafe { indirect2.modify(0, f) }
                 }
                 (Indirect1(_), Indirect2(indirect2_blocks, _)) => {
-                    // let indirect2 = Arc::clone(cache_mgr.get_block(self.indirect[1] as usize));
                     let indirect2 = fs.get_block(self.indirect[1] as usize);
                     let f = |indirect2: &mut IndirectBlock| {
-                        for i in 0..=indirect2_blocks {
+                        for i in 0..indirect2_blocks {
                             fs.dealloc_block(indirect2[i] as usize);
                             indirect2[i] = 0;
                         }
@@ -201,7 +202,7 @@ impl DiskInode {
                 (Direct(_), Indirect2(indirect2_blocks, _)) => {
                     let indirect2 = fs.get_block(self.indirect[1] as usize);
                     let f = |indirect2: &mut IndirectBlock| {
-                        for i in 0..=indirect2_blocks {
+                        for i in 0..indirect2_blocks {
                             fs.dealloc_block(indirect2[i] as usize);
                             indirect2[i] = 0;
                         }
@@ -224,8 +225,7 @@ impl DiskInode {
         buf: &mut [u8], 
         fs: &EasyFileSystem,
     ) -> usize {
-        let start_inner_id = offset / BLOCK_SIZE;
-        let start_offset = offset % BLOCK_SIZE;
+        let (start_inner_id, start_offset) = Self::offset_to_inner(offset);
 
         let mut inner_id = start_inner_id;
         let mut block_start = start_offset;
@@ -260,8 +260,7 @@ impl DiskInode {
         fs: &EasyFileSystem,
     ) {
         self.resize((offset + data.len()) as u32, fs);
-        let start_inner_id = offset / BLOCK_SIZE;
-        let start_offset = offset % BLOCK_SIZE;
+        let (start_inner_id, start_offset) = Self::offset_to_inner(offset);
 
         let mut inner_id = start_inner_id;
         let mut block_start = start_offset;
@@ -282,55 +281,67 @@ impl DiskInode {
     }
 
     fn get_block_id(&self, inner_id: usize, fs: &EasyFileSystem) -> u32 {
-        match InnerId::new(inner_id) {
-            InnerId::Direct(id) => {
-                self.direct[id]
+        match InnerIndex::new(inner_id) {
+            InnerIndex::Direct(0) => {
+                panic!("get block id underflow");
             }
-            InnerId::Indirect1(id) => {
+            InnerIndex::Direct(id) => {
+                self.direct[id - 1]
+            }
+            InnerIndex::Indirect1(id) => {
                 let indirect1 = fs.get_block(self.indirect[0] as usize);
-                let f = |indirect1: &IndirectBlock| indirect1[id];
+                let f = |indirect1: &IndirectBlock| indirect1[id - 1];
                 // SAFETY: arbitrary initialized data would be valid for this type
                 unsafe { indirect1.read(0, f) }
             }
-            InnerId::Indirect2(id1, id2) => {
+            InnerIndex::Indirect2(id1, id2) => {
                 let indirect2 = {
                     let indirect1 = fs.get_block(self.indirect[0] as usize);
-                    let f = |indirect1: &IndirectBlock| indirect1[id1];
+                    let f = |indirect1: &IndirectBlock| indirect1[id1 - 1];
                     let indirect2_block_id = unsafe { indirect1.read(0, f) };
                     fs.get_block(indirect2_block_id as usize)
                 };
-                let f = |indirect2: &IndirectBlock| indirect2[id2];
+                let f = |indirect2: &IndirectBlock| indirect2[id2 - 1];
                 unsafe { indirect2.read(0, f) }
             }
         }
     }
 
     fn set_block_id(&mut self, inner_id: usize, block_id: u32, fs: &EasyFileSystem) -> u32 {
-        match InnerId::new(inner_id) {
-            InnerId::Direct(id) => {
-                mem::replace(&mut self.direct[id], block_id)
+        match InnerIndex::new(inner_id) {
+            InnerIndex::Direct(0) => {
+                panic!("set block id underflow");
             }
-            InnerId::Indirect1(id) => {
+            InnerIndex::Direct(id) => {
+                mem::replace(&mut self.direct[id - 1], block_id)
+            }
+            InnerIndex::Indirect1(id) => {
                 let indirect1 = if self.indirect[0] != 0 {
                     fs.get_block(self.indirect[0] as usize)
                 } else {
                     fs.alloc_block().expect("we run out of blocks. QAQ")
                 };
-                let f = |indirect1: &mut IndirectBlock| mem::replace(&mut indirect1[id], block_id);
+                let f = |indirect1: &mut IndirectBlock| mem::replace(&mut indirect1[id - 1], block_id);
                 // SAFETY: arbitrary initialized data would be valid for this type
                 unsafe { indirect1.modify(0, f) }
             }
-            InnerId::Indirect2(id1, id2) => {
+            InnerIndex::Indirect2(id1, id2) => {
                 let indirect2 = {
                     let indirect1 = fs.get_block(self.indirect[0] as usize);
-                    let f = |indirect1: &IndirectBlock| indirect1[id1];
+                    let f = |indirect1: &IndirectBlock| indirect1[id1 - 1];
                     let indirect2_block_id = unsafe { indirect1.read(0, f) };
                     fs.get_block(indirect2_block_id as usize)
                 };
-                let f = |indirect2: &mut IndirectBlock| mem::replace(&mut indirect2[id2], block_id);
+                let f = |indirect2: &mut IndirectBlock| mem::replace(&mut indirect2[id2 - 1], block_id);
                 unsafe { indirect2.modify(0, f) }
             }
         }
+    }
+
+    fn offset_to_inner(offset: usize) -> (usize, usize) {
+        let inner_id = 1 + offset / BLOCK_SIZE;
+        let block_offset = offset % BLOCK_SIZE;
+        (inner_id, block_offset)
     }
 }
 
