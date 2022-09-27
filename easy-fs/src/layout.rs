@@ -1,12 +1,6 @@
-use alloc::sync::Arc;
-
 use core::mem;
 use core::cmp;
 use crate::{BLOCK_SIZE, Block};
-use crate::block_cache::BlockCacheManager;
-use crate::block_cache::BlockCache;
-use crate::bitmap::Bitmap;
-use core::mem::MaybeUninit;
 use crate::efs::EasyFileSystem;
 use bitflags::bitflags;
 
@@ -148,7 +142,8 @@ impl DiskInode {
         if self.size < new_size {
             if self.size > 0 {
                 // clear pass-the-end data at last block
-                let last_block = fs.get_block(old_blocks - 1);
+                let last_block_id = self.get_block_id(old_blocks, fs);
+                let last_block = fs.get_block(last_block_id as usize);
                 let last_pos = self.size as usize % BLOCK_SIZE;
                 let f = |b: &mut Block| b[last_pos..].fill(0);
                 unsafe { last_block.modify(0, f) }

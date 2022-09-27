@@ -3,7 +3,6 @@ use core::mem::MaybeUninit;
 use crate::BLOCK_SIZE;
 use crate::layout::*;
 use crate::bitmap::Bitmap;
-use crate::block_dev::BlockDevice;
 use crate::block_cache::BlockCache;
 use crate::block_cache::BlockCacheManager;
 use spin::Mutex;
@@ -284,7 +283,7 @@ pub mod tests {
     use crate::block_cache::tests::setup as block_cache_setup;
 
     pub fn setup() -> Arc<EasyFileSystem> {
-        let (_block_dev, mut cache_mgr) = block_cache_setup();
+        let (_block_dev, cache_mgr) = block_cache_setup();
         let efs = EasyFileSystem::create(
             Arc::new(Mutex::new(cache_mgr)),
             100,

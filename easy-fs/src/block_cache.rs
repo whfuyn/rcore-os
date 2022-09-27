@@ -5,9 +5,7 @@ use alloc::sync::Arc;
 use alloc::collections::VecDeque;
 use spin::Mutex;
 use spin::MutexGuard;
-use spin::Once;
 use core::mem::MaybeUninit;
-use lazy_static::lazy_static;
 use core::ptr::addr_of;
 use core::ptr::addr_of_mut;
 

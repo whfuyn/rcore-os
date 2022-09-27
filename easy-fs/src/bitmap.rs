@@ -1,8 +1,6 @@
 use crate::{
-    block_dev::BlockDevice,
     BLOCK_SIZE,
     block_cache::BlockCacheManager,
-    efs::EasyFileSystem,
 };
 
 

@@ -285,6 +285,15 @@ mod tests {
         b.remove_file("c")?;
         root_dir.remove_dir("b")?;
 
+        for i in 0..100 {
+            if i % 2 == 0 {
+                root_dir.create_dir(&format!("{}", i))?;
+            } else {
+                root_dir.create_file(&format!("{}", i))?;
+            }
+        }
+        assert_eq!(root_dir.list().len(), 100);
+
         Ok(())
     }
 }
