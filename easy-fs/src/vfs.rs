@@ -92,6 +92,16 @@ impl File {
 pub struct Directory(Inode);
 
 impl Directory {
+    // Design Note:
+    // I was trying to use the block cache lock as directory lock, so that our fs can be safely
+    // used by multiple threads.
+    // But it turns out to be a terrible failure. The block cache we locked actually contains
+    // multiple inodes, which causes a deadlock when we further access inodes resided in the
+    // same block cache.
+    // Lack of more specific OS supports, I couldn't find a better solution for this problem
+    // without making the code extremely ugly or resorting to even dangerous unsafe.
+    // So, the current implementation isn't safe to be used concurrently. :(
+
     pub fn open(&self, name: &str) -> Option<FileOrDirectory> {
         let inode = self.0.read_disk_inode(|di, fs| {
             let mut entry_buf = DirEntry::empty();
