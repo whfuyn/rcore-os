@@ -118,7 +118,7 @@ impl Directory {
         });
         if let Some(inode) = existing_inode {
             if inode.is_dir() {
-                return Err(Error::IsDir);
+                Err(Error::IsDir)
             } else {
                 inode.resize(0);
                 Ok(File(inode))

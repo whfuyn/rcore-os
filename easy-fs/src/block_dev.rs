@@ -34,7 +34,7 @@ pub mod tests {
         }
 
         fn write_block(&self, block_id: usize, buf: &Block) {
-            self.blocks.lock().insert(block_id, buf.clone());
+            self.blocks.lock().insert(block_id, *buf);
         }
     }
 

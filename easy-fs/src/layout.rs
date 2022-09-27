@@ -122,14 +122,6 @@ impl DiskInode {
         }
     }
 
-    pub fn file() -> Self {
-        Self::new(InodeType::FILE)
-    }
-
-    pub fn directory() -> Self {
-        Self::new(InodeType::DIRECTORY)
-    }
-
     fn blocks_for_size(size: u32) -> usize {
         (size as usize).div_ceil(BLOCK_SIZE)
     }

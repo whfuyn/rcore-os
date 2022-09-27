@@ -127,7 +127,7 @@ impl EasyFileSystem {
 
     pub fn open(cache_mgr: Arc<Mutex<BlockCacheManager>>) -> Result<Self, Arc<Mutex<BlockCacheManager>>> {
         let super_block_cache = Arc::clone(cache_mgr.lock().get_block(0));
-        let f = |b: &SuperBlock| b.clone();
+        let f = |b: &SuperBlock| *b;
         let sblk = unsafe { super_block_cache.read(0, f) };
         if sblk.validate() {
             Ok(Self::new(cache_mgr, sblk.inode_bitmap_blocks, sblk.inode_area_blocks, sblk.data_bitmap_blocks))
@@ -219,14 +219,12 @@ impl EasyFileSystem {
         let mut open_inodes = self.open_inodes.lock();
         let record = open_inodes.get_mut(&inode_id).expect("try to close a file that isn't opened");
         record.ref_count -= 1;
-        if record.ref_count == 0 {
-            if record.pending_delete {
-                // Release lock when we are reclaiming the space used by the deleted inode.
-                // Open inode won't be able to open the deleted, because of the pending_delete flag.
-                drop(open_inodes);
-                self.dealloc_inode(inode_id);
-                self.open_inodes.lock().remove(&inode_id);
-            }
+        if record.ref_count == 0 && record.pending_delete {
+            // Release lock when we are reclaiming the space used by the deleted inode.
+            // Open inode won't be able to open the deleted, because of the pending_delete flag.
+            drop(open_inodes);
+            self.dealloc_inode(inode_id);
+            self.open_inodes.lock().remove(&inode_id);
         }
     }
 
