@@ -319,14 +319,32 @@ mod tests {
         b.remove_file("c")?;
         root_dir.remove_dir("b")?;
 
-        for i in 0..100 {
+        // let n = 193;
+        let n = 8000;
+        for i in 0..n {
+            // dbg!(i);
             if i % 2 == 0 {
                 root_dir.create_dir(&format!("{}", i))?;
             } else {
                 root_dir.create_file(&format!("{}", i))?;
             }
+            // dbg!(root_dir.list());
         }
-        assert_eq!(root_dir.list().len(), 100);
+        println!("create done");
+        // assert_eq!(root_dir.list().len(), 100);
+        assert_eq!(root_dir.list().len(), n);
+        // dbg!(root_dir.list());
+        for i in 0..n {
+            // println!("remove {}", i);
+            if i % 2 == 0 {
+                root_dir.remove_dir(&format!("{}", i))?;
+            } else {
+                root_dir.remove_file(&format!("{}", i))?;
+            }
+            // println!("{} removed", i);
+            // dbg!(root_dir.list());
+        }
+        assert_eq!(root_dir.list().len(), 0);
 
         Ok(())
     }

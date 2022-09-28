@@ -1,6 +1,4 @@
-use crate::{block_cache::BlockCacheManager, BLOCK_SIZE};
-
-const BLOCK_BITS: usize = BLOCK_SIZE * 8;
+use crate::{block_cache::BlockCacheManager, BLOCK_BITS};
 
 type BitmapBlock = [u64; 64];
 
@@ -20,7 +18,7 @@ impl Bitmap {
         let block_pos = slot / BLOCK_BITS;
 
         if block_pos >= self.size {
-            panic!("try to check a slot that is out of the bitmap");
+            panic!("try to check a slot `{}` that is out of the bitmap", slot);
         }
         let block = cache_mgr.get_block(self.start_block + block_pos);
         let f = |bitmap: &BitmapBlock| bitmap[u64_pos as usize] & (1 << bit_pos) != 0;

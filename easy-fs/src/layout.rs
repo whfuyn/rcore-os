@@ -1,8 +1,9 @@
 use crate::efs::EasyFileSystem;
-use crate::{Block, BLOCK_SIZE};
+use crate::{Block, BLOCK_SIZE, BLOCK_BITS};
 use bitflags::bitflags;
 use core::cmp;
 use core::mem;
+use static_assertions::assert_eq_size;
 
 pub const EASY_FS_MAGIC: u32 = 0xf1f1f1f1;
 const INODE_DIRECT_COUNT: usize = 28;
@@ -46,12 +47,11 @@ impl SuperBlock {
     }
 
     pub fn validate(&self) -> bool {
-        let sum = self.inode_bitmap_blocks
-            + self.inode_area_blocks
-            + self.data_bitmap_blocks
-            + self.data_area_blocks
-            + 1;
-        self.total_blocks < sum && self.magic == EASY_FS_MAGIC
+        self.magic == EASY_FS_MAGIC
+            && self.inode_bitmap_blocks * BLOCK_BITS as u32 <= self.inode_area_blocks
+            && self.data_bitmap_blocks * BLOCK_BITS as u32 <= self.data_area_blocks
+            && 1 + self.inode_bitmap_blocks + self.inode_area_blocks 
+                + self.data_bitmap_blocks + self.data_area_blocks <= self.total_blocks
     }
 }
 
@@ -64,6 +64,8 @@ pub struct DiskInode {
     pub indirect: [u32; 2],
     pub ty: InodeType,
 }
+
+assert_eq_size!(DiskInode, [u8; 128]);
 
 // Don't use rust enum for this type.
 // Data on disk might be corrupted, and transmuting a invalid value to
@@ -111,7 +113,7 @@ impl InnerIndex {
             <= INODE_DIRECT_COUNT + INODE_INDIRECT_COUNT + INODE_INDIRECT_COUNT.pow(2)
         {
             let idx = inner_id - INODE_DIRECT_COUNT - INODE_INDIRECT_COUNT;
-            Self::Indirect2(idx / INODE_INDIRECT_COUNT, idx % INODE_INDIRECT_COUNT)
+            Self::Indirect2(idx.div_ceil(INODE_INDIRECT_COUNT), idx % INODE_INDIRECT_COUNT)
         } else {
             panic!("out-of-bound inner id")
         }
@@ -141,7 +143,7 @@ impl DiskInode {
         let new_blocks = Self::blocks_for_size(new_size);
         let old_blocks = Self::blocks_for_size(self.size);
         if self.size < new_size {
-            if self.size > 0 {
+            if self.size as usize % BLOCK_SIZE > 0 {
                 // clear pass-the-end data at last block
                 let last_block_id = self.get_block_id(old_blocks, fs);
                 let last_block = fs.get_block(last_block_id as usize);
@@ -149,16 +151,14 @@ impl DiskInode {
                 let f = |b: &mut Block| b[last_pos..].fill(0);
                 unsafe { last_block.modify(0, f) }
             }
-            for i in old_blocks..new_blocks {
-                let inner_id = 1 + i;
+            for inner_id in (old_blocks + 1)..=new_blocks {
                 let new_block = fs.alloc_block().expect("cannot alloc more blocks");
                 let f = |b: &mut Block| b.fill(0);
                 unsafe { new_block.modify(0, f) };
                 self.set_block_id(inner_id, new_block.block_id() as u32, fs);
             }
         } else if self.size > new_size {
-            for i in new_blocks..old_blocks {
-                let inner_id = 1 + i;
+            for inner_id in (new_blocks + 1)..=old_blocks {
                 let deallocated = self.set_block_id(inner_id, 0, fs);
                 fs.dealloc_block(deallocated as usize);
             }
@@ -245,7 +245,9 @@ impl DiskInode {
     }
 
     pub fn write_at(&mut self, offset: usize, data: &[u8], fs: &EasyFileSystem) {
-        self.resize((offset + data.len()) as u32, fs);
+        if offset + data.len() > self.size as usize {
+            self.resize((offset + data.len()) as u32, fs);
+        }
         let (start_inner_id, start_offset) = Self::offset_to_inner(offset);
 
         let mut inner_id = start_inner_id;
@@ -302,7 +304,9 @@ impl DiskInode {
                 let indirect1 = if self.indirect[0] != 0 {
                     fs.get_block(self.indirect[0] as usize)
                 } else {
-                    fs.alloc_block().expect("we run out of blocks. QAQ")
+                    let indirect1_block = fs.alloc_block().expect("we run out of blocks. QAQ");
+                    self.indirect[0] = indirect1_block.block_id() as u32;
+                    indirect1_block
                 };
                 let f =
                     |indirect1: &mut IndirectBlock| mem::replace(&mut indirect1[id - 1], block_id);
@@ -311,10 +315,23 @@ impl DiskInode {
             }
             InnerIndex::Indirect2(id1, id2) => {
                 let indirect2 = {
-                    let indirect1 = fs.get_block(self.indirect[0] as usize);
-                    let f = |indirect1: &IndirectBlock| indirect1[id1 - 1];
-                    let indirect2_block_id = unsafe { indirect1.read(0, f) };
-                    fs.get_block(indirect2_block_id as usize)
+                    let indirect2_1 = if self.indirect[1] != 0 {
+                        fs.get_block(self.indirect[0] as usize)
+                    } else {
+                        let indirect2_1 = fs.alloc_block().expect("we run out of blocks. QAQ");
+                        self.indirect[1] = indirect2_1.block_id() as u32;
+                        indirect2_1
+                    };
+                    let f = |indirect2_1: &IndirectBlock| indirect2_1[id1 - 1];
+                    let indirect2_2_block_id = unsafe { indirect2_1.read(0, f) };
+                    if indirect2_2_block_id != 0 {
+                        fs.get_block(indirect2_2_block_id as usize)
+                    } else {
+                        let indirect2_2 = fs.alloc_block().expect("we run out of blocks. QAQ");
+                        let f = |indirect2_1: &mut IndirectBlock| indirect2_1[id2 - 1] = indirect2_2.block_id() as u32;
+                        unsafe { indirect2_1.modify(0, f) }
+                        indirect2_2
+                    }
                 };
                 let f =
                     |indirect2: &mut IndirectBlock| mem::replace(&mut indirect2[id2 - 1], block_id);
@@ -339,6 +356,8 @@ pub struct DirEntry {
     inode_id: u32,
 }
 
+assert_eq_size!(DirEntry, [u8; 32]);
+
 impl DirEntry {
     pub fn empty() -> Self {
         Self {
@@ -352,10 +371,16 @@ impl DirEntry {
         let mut name_buf = [0; MAX_NAME_LENGTH + 1];
         name_buf[..name.len()].copy_from_slice(name.as_bytes());
         name_buf[name.len()] = 0;
-        Self {
+        let it = Self {
             name: name_buf,
             inode_id,
-        }
+        };
+        assert_eq!(it.name(), name);
+        it
+        // Self {
+        //     name: name_buf,
+        //     inode_id,
+        // }
     }
 
     pub fn name(&self) -> &str {

@@ -191,6 +191,8 @@ impl EasyFileSystem {
 
     pub(crate) fn get_block(&self, block_id: usize) -> Arc<BlockCache> {
         let mut cache_mgr = self.cache_mgr.lock();
+        // dbg!(block_id);
+        // dbg!(self.data_area_start);
         let slot = block_id - self.data_area_start;
         if !self.data_bitmap.is_allocated(slot, &mut cache_mgr) {
             panic!("block `{}` isn't allocated", block_id);
@@ -316,10 +318,18 @@ impl EasyFileSystem {
 pub mod tests {
     use super::*;
     use crate::block_cache::tests::setup as block_cache_setup;
+    use crate::BLOCK_BITS;
 
     pub fn setup() -> Arc<EasyFileSystem> {
         let (_block_dev, cache_mgr) = block_cache_setup();
-        let efs = EasyFileSystem::create(Arc::new(Mutex::new(cache_mgr)), 100, 1, 49, 1, 49);
+        let efs = EasyFileSystem::create(
+            Arc::new(Mutex::new(cache_mgr)),
+            1 + 2 * BLOCK_BITS as u32 + 2,
+            1,
+            BLOCK_BITS as u32,
+            1,
+            BLOCK_BITS as u32,
+        );
         Arc::new(efs)
     }
 

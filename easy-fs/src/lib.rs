@@ -1,4 +1,4 @@
-#![cfg_attr(not(test), no_std)]
+// #![cfg_attr(not(test), no_std)]
 #![feature(int_roundings)]
 #![feature(cstr_from_bytes_until_nul)]
 
@@ -12,6 +12,7 @@ mod vfs;
 extern crate alloc;
 
 pub(crate) const BLOCK_SIZE: usize = 512;
+pub(crate) const BLOCK_BITS: usize = BLOCK_SIZE * 8;
 pub(crate) type Block = [u8; BLOCK_SIZE];
 
 pub use block_cache::BlockCacheManager;
