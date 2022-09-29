@@ -1,6 +1,7 @@
 #![cfg_attr(not(test), no_std)]
 #![feature(int_roundings)]
 #![feature(cstr_from_bytes_until_nul)]
+#![feature(let_else)]
 
 mod bitmap;
 mod block_cache;
