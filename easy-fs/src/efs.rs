@@ -191,8 +191,6 @@ impl EasyFileSystem {
 
     pub(crate) fn get_block(&self, block_id: usize) -> Arc<BlockCache> {
         let mut cache_mgr = self.cache_mgr.lock();
-        // dbg!(block_id);
-        // dbg!(self.data_area_start);
         let slot = block_id - self.data_area_start;
         if !self.data_bitmap.is_allocated(slot, &mut cache_mgr) {
             panic!("block `{}` isn't allocated", block_id);

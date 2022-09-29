@@ -320,7 +320,7 @@ mod tests {
         root_dir.remove_dir("b")?;
 
         // let n = 193;
-        let n = 8000;
+        let n = 4092;
         for i in 0..n {
             // dbg!(i);
             if i % 2 == 0 {
@@ -345,6 +345,23 @@ mod tests {
             // dbg!(root_dir.list());
         }
         assert_eq!(root_dir.list().len(), 0);
+
+        Ok(())
+    }
+
+    #[test]
+    fn large_file_test() -> Result<()> {
+        let fs = setup();
+        let root_dir = fs.create_root_dir()?;
+        let a = root_dir.create_file("a")?;
+
+        let data = b"hello";
+        let mut buf = [0; 5];
+        let offset = 2 * 1024 * 1024 - 512 * 34 - 5; 
+        a.write_at(offset, data);
+        a.read_at(offset, &mut buf);
+        // dbg!(a.size());
+        assert_eq!(data, &buf);
 
         Ok(())
     }
