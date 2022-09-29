@@ -76,8 +76,8 @@ impl File {
         self.0.size()
     }
 
-    pub fn resize(&self, new_size: u32) {
-        self.0.resize(new_size)
+    pub fn resize(&self, new_size: usize) {
+        self.0.resize(new_size.try_into().unwrap())
     }
 
     pub fn read_at(&self, offset: usize, buf: &mut [u8]) -> usize {
@@ -286,6 +286,13 @@ mod tests {
     use super::*;
     use crate::efs::tests::setup;
 
+    // 2 for the root inode and the file inode 
+    // 2 for indirect1 and indirect2_1
+    // 30 for indirect2_2
+    const MAX_TEST_INODE_SIZE: usize = 2 * 1024 * 1024 - 512 * 34;
+    // 1 for root inode
+    const MAX_TEST_INODE_NUM: usize = 4095;
+
     #[test]
     fn vfs_basic() -> Result<()> {
         let fs = setup();
@@ -319,49 +326,79 @@ mod tests {
         b.remove_file("c")?;
         root_dir.remove_dir("b")?;
 
-        // let n = 193;
-        let n = 4092;
-        for i in 0..n {
-            // dbg!(i);
-            if i % 2 == 0 {
-                root_dir.create_dir(&format!("{}", i))?;
-            } else {
-                root_dir.create_file(&format!("{}", i))?;
-            }
-            // dbg!(root_dir.list());
-        }
-        println!("create done");
-        // assert_eq!(root_dir.list().len(), 100);
-        assert_eq!(root_dir.list().len(), n);
-        // dbg!(root_dir.list());
-        for i in 0..n {
-            // println!("remove {}", i);
-            if i % 2 == 0 {
-                root_dir.remove_dir(&format!("{}", i))?;
-            } else {
-                root_dir.remove_file(&format!("{}", i))?;
-            }
-            // println!("{} removed", i);
-            // dbg!(root_dir.list());
-        }
-        assert_eq!(root_dir.list().len(), 0);
-
         Ok(())
     }
 
     #[test]
-    fn large_file_test() -> Result<()> {
+    fn so_many_dirs_and_files() -> Result<()> {
+        let fs = setup();
+        let root_dir = fs.create_root_dir()?;
+
+        let n = MAX_TEST_INODE_NUM;
+        for _ in 0..2 {
+            for i in 0..n {
+                if i % 2 == 0 {
+                    root_dir.create_dir(&format!("{}", i))?;
+                } else {
+                    root_dir.create_file(&format!("{}", i))?;
+                }
+            }
+            assert_eq!(root_dir.list().len(), n);
+            for i in 0..n {
+                if i % 2 == 0 {
+                    root_dir.remove_dir(&format!("{}", i))?;
+                } else {
+                    root_dir.remove_file(&format!("{}", i))?;
+                }
+            }
+            assert_eq!(root_dir.list().len(), 0);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn large_file() -> Result<()> {
         let fs = setup();
         let root_dir = fs.create_root_dir()?;
         let a = root_dir.create_file("a")?;
 
         let data = b"hello";
         let mut buf = [0; 5];
-        let offset = 2 * 1024 * 1024 - 512 * 34 - 5; 
+
+        let offset = MAX_TEST_INODE_SIZE - 5; 
         a.write_at(offset, data);
         a.read_at(offset, &mut buf);
-        // dbg!(a.size());
         assert_eq!(data, &buf);
+
+        Ok(())
+    }
+
+    #[test]
+    fn growing_file() -> Result<()> {
+        let fs = setup();
+        let root_dir = fs.create_root_dir()?;
+        let a = root_dir.create_file("a")?;
+
+        for n in 0..MAX_TEST_INODE_SIZE {
+            a.resize(n);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn shrinking_file() -> Result<()> {
+        let fs = setup();
+        let root_dir = fs.create_root_dir()?;
+        let a = root_dir.create_file("a")?;
+        a.resize(MAX_TEST_INODE_SIZE);
+
+        for n in (0..MAX_TEST_INODE_SIZE).rev() {
+            a.resize(n);
+        }
+
+        let b = root_dir.create_file("b")?;
+        b.resize(MAX_TEST_INODE_SIZE);
 
         Ok(())
     }
