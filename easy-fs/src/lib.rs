@@ -12,9 +12,9 @@ mod vfs;
 
 extern crate alloc;
 
-pub(crate) const BLOCK_SIZE: usize = 512;
-pub(crate) const BLOCK_BITS: usize = BLOCK_SIZE * 8;
-pub(crate) type Block = [u8; BLOCK_SIZE];
+pub const BLOCK_SIZE: usize = 512;
+pub const BLOCK_BITS: usize = BLOCK_SIZE * 8;
+pub type Block = [u8; BLOCK_SIZE];
 
 pub use block_cache::BlockCacheManager;
 pub use block_dev::BlockDevice;

@@ -83,44 +83,56 @@ pub struct EasyFileSystem {
 
 impl EasyFileSystem {
     fn new(
-        cache_mgr: Arc<Mutex<BlockCacheManager>>,
+        cache_mgr: BlockCacheManager,
         inode_bitmap_blocks: u32,
         inode_area_blocks: u32,
         data_bitmap_blocks: u32,
-    ) -> Self {
+        data_area_blocks: u32,
+    ) -> Arc<Self> {
+        let cache_mgr = Arc::new(Mutex::new(cache_mgr));
+
         let inode_bitmap_start = 1;
-        let inode_bitmap = Bitmap::new(inode_bitmap_start as usize, inode_bitmap_blocks as usize);
+        let inode_bitmap = Bitmap::new(
+            inode_bitmap_start as usize,
+            inode_bitmap_blocks as usize,
+            inode_area_blocks as usize,
+        );
         let inode_area_start = inode_bitmap_start + inode_bitmap_blocks;
 
         let data_bitmap_start = inode_area_start + inode_area_blocks;
-        let data_bitmap = Bitmap::new(data_bitmap_start as usize, data_bitmap_blocks as usize);
+        let data_bitmap = Bitmap::new(
+            data_bitmap_start as usize,
+            data_bitmap_blocks as usize,
+            data_area_blocks as usize,
+        );
         let data_area_start = data_bitmap_start + data_bitmap_blocks;
-        Self {
+        let efs = Self {
             inode_area_start: inode_area_start as usize,
             inode_bitmap,
             data_area_start: data_area_start as usize,
             data_bitmap,
             open_inodes: Mutex::new(BTreeMap::new()),
             cache_mgr,
-        }
+        };
+        Arc::new(efs)
     }
 
     pub fn create(
-        cache_mgr: Arc<Mutex<BlockCacheManager>>,
+        mut cache_mgr: BlockCacheManager,
         total_blocks: u32,
         inode_bitmap_blocks: u32,
         inode_area_blocks: u32,
         data_bitmap_blocks: u32,
         data_area_blocks: u32,
-    ) -> Self {
-        let super_block_cache = Arc::clone(cache_mgr.lock().get_block(0));
+    ) -> Arc<Self> {
+        let super_block_cache = Arc::clone(cache_mgr.get_block(0));
         let f = |b: &mut MaybeUninit<SuperBlock>| {
             b.write(SuperBlock::new(
                 total_blocks,
                 inode_bitmap_blocks,
                 inode_area_blocks,
                 data_bitmap_blocks,
-                data_area_blocks,
+                data_area_blocks
             ));
         };
         super_block_cache.modify_maybe_uninit(0, f);
@@ -130,13 +142,14 @@ impl EasyFileSystem {
             inode_bitmap_blocks,
             inode_area_blocks,
             data_bitmap_blocks,
+            data_area_blocks
         )
     }
 
     pub fn open(
-        cache_mgr: Arc<Mutex<BlockCacheManager>>,
-    ) -> Result<Self, Arc<Mutex<BlockCacheManager>>> {
-        let super_block_cache = Arc::clone(cache_mgr.lock().get_block(0));
+        mut cache_mgr: BlockCacheManager,
+    ) -> Result<Arc<Self>, BlockCacheManager> {
+        let super_block_cache = cache_mgr.get_block(0);
         let f = |b: &SuperBlock| *b;
         let sblk = unsafe { super_block_cache.read(0, f) };
         if sblk.validate() {
@@ -145,6 +158,7 @@ impl EasyFileSystem {
                 sblk.inode_bitmap_blocks,
                 sblk.inode_area_blocks,
                 sblk.data_bitmap_blocks,
+                sblk.data_area_blocks
             ))
         } else {
             Err(cache_mgr)
@@ -320,15 +334,14 @@ pub mod tests {
 
     pub fn setup() -> Arc<EasyFileSystem> {
         let (_block_dev, cache_mgr) = block_cache_setup();
-        let efs = EasyFileSystem::create(
-            Arc::new(Mutex::new(cache_mgr)),
+        EasyFileSystem::create(
+            cache_mgr,
             1 + 2 * BLOCK_BITS as u32 + 2,
             1,
             BLOCK_BITS as u32,
             1,
             BLOCK_BITS as u32,
-        );
-        Arc::new(efs)
+        )
     }
 
     // #[test]

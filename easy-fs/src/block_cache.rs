@@ -209,14 +209,14 @@ pub mod tests {
         let b1 = Arc::clone(cache_mgr.get_block(1));
         unsafe {
             b1.read(0, |d: &u8| {
-                assert!(*d == 0);
+                assert_eq!(*d, 0);
             });
 
             b1.modify(0, |d: &mut u8| {
                 *d = 1;
             });
             b1.read(0, |d: &u8| {
-                assert!(*d == 1);
+                assert_eq!(*d, 1);
             });
         }
         let b2 = Arc::clone(cache_mgr.get_block(2));
@@ -225,7 +225,7 @@ pub mod tests {
                 *d = 2;
             });
             b2.read(2, |d: &u8| {
-                assert!(*d == 2);
+                assert_eq!(*d, 2);
             });
         }
 
@@ -234,9 +234,9 @@ pub mod tests {
         drop(cache_mgr);
 
         inner_dev.read_block(1, &mut buf);
-        assert!(buf[0] == 1);
+        assert_eq!(buf[0], 1);
         inner_dev.read_block(2, &mut buf);
-        assert!(buf[2] == 2);
+        assert_eq!(buf[2], 2);
     }
 
     #[test]

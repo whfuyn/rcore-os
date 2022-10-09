@@ -41,14 +41,14 @@ impl SuperBlock {
             data_bitmap_blocks,
             data_area_blocks,
         };
-        assert!(it.validate(), "insufficient total blocks");
+        assert!(it.validate(), "insufficient blocks");
         it
     }
 
     pub fn validate(&self) -> bool {
         self.magic == EASY_FS_MAGIC
-            && self.inode_bitmap_blocks * BLOCK_BITS as u32 <= self.inode_area_blocks
-            && self.data_bitmap_blocks * BLOCK_BITS as u32 <= self.data_area_blocks
+            && self.inode_area_blocks <= self.inode_bitmap_blocks * BLOCK_BITS as u32
+            && self.data_area_blocks <= self.data_bitmap_blocks * BLOCK_BITS as u32
             && 1 + self.inode_bitmap_blocks + self.inode_area_blocks 
                 + self.data_bitmap_blocks + self.data_area_blocks <= self.total_blocks
     }

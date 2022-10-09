@@ -3,60 +3,61 @@ use crate::{block_cache::BlockCacheManager, BLOCK_BITS};
 type BitmapBlock = [u64; 64];
 
 pub struct Bitmap {
-    start_block: usize,
-    size: usize,
+    bitmap_start: usize,
+    bitmap_blocks: usize,
+    available_blocks: usize,
 }
 
 impl Bitmap {
-    pub fn new(start_block: usize, size: usize) -> Self {
-        Self { start_block, size }
+    pub fn new(bitmap_start: usize, bitmap_blocks: usize, available_blocks: usize) -> Self {
+        Self { bitmap_start, bitmap_blocks, available_blocks }
     }
 
     pub fn is_allocated(&self, slot: usize, cache_mgr: &mut BlockCacheManager) -> bool {
-        let bit_pos = slot % u64::BITS as usize;
-        let u64_pos = slot % BLOCK_BITS / 64;
-        let block_pos = slot / BLOCK_BITS;
+        let (bit_pos, u64_pos, block_pos) = self.slot_to_pos(slot);
 
-        if block_pos >= self.size {
-            panic!("try to check a slot `{}` that is out of the bitmap", slot);
-        }
-        let block = cache_mgr.get_block(self.start_block + block_pos);
+        let block = cache_mgr.get_block(self.bitmap_start + block_pos);
         let f = |bitmap: &BitmapBlock| bitmap[u64_pos as usize] & (1 << bit_pos) != 0;
         unsafe { block.read(0, f) }
     }
 
     pub fn alloc(&self, cache_mgr: &mut BlockCacheManager) -> Option<usize> {
-        for block_pos in 0..self.size {
-            let block_id = self.start_block + block_pos;
+        for block_pos in 0..self.bitmap_blocks {
+            let block_id = self.bitmap_start + block_pos;
             let block = cache_mgr.get_block(block_id);
             let f = |bitmap: &mut BitmapBlock| {
                 bitmap.iter_mut().enumerate().find_map(|(u64_pos, b)| {
                     if *b != u64::MAX {
                         let bit_pos = b.trailing_ones() as usize;
-                        // *b |= *b + 1;
-                        *b |= 1 << bit_pos;
-                        Some(u64_pos * u64::BITS as usize + bit_pos)
+                        let inner_pos = u64_pos * u64::BITS as usize + bit_pos;
+                        let target_pos = block_pos * BLOCK_BITS + inner_pos;
+                        if target_pos >= self.available_blocks {
+                            Some(None)
+                        } else {
+                            // *b |= *b + 1;
+                            *b |= 1 << bit_pos;
+                            Some(Some(target_pos))
+                        }
                     } else {
                         None
                     }
                 })
             };
-            if let Some(inner_pos) = unsafe { block.modify(0, f) } {
-                return Some(block_pos * BLOCK_BITS + inner_pos as usize);
+            if let Some(res) = unsafe { block.modify(0, f) } {
+                if let Some(target_pos) = res {
+                    return Some(target_pos);
+                } else {
+                    return None;
+                }
             }
         }
         None
     }
 
     pub fn dealloc(&self, slot: usize, cache_mgr: &mut BlockCacheManager) {
-        let bit_pos = slot % u64::BITS as usize;
-        let u64_pos = slot % BLOCK_BITS / 64;
-        let block_pos = slot / BLOCK_BITS;
+        let (bit_pos, u64_pos, block_pos) = self.slot_to_pos(slot);
 
-        if block_pos >= self.size {
-            panic!("try to dealloc a slot that is out of the bitmap");
-        }
-        let block = cache_mgr.get_block(self.start_block + block_pos);
+        let block = cache_mgr.get_block(self.bitmap_start + block_pos);
         let f = |bitmap: &mut BitmapBlock| {
             assert!(bitmap[u64_pos as usize] & (1 << bit_pos) != 0);
             bitmap[u64_pos as usize] &= !(1 << bit_pos);
@@ -64,6 +65,22 @@ impl Bitmap {
         unsafe {
             block.modify(0, f);
         }
+    }
+
+    fn slot_to_pos(&self, slot: usize) -> (usize, usize, usize) {
+        if slot >= self.available_blocks {
+            panic!("try to convert a slot `{}` that is out of the available blocks", slot);
+        }
+
+        let bit_pos = slot % u64::BITS as usize;
+        let u64_pos = slot % BLOCK_BITS / 64;
+        let block_pos = slot / BLOCK_BITS;
+
+        if block_pos >= self.bitmap_blocks {
+            panic!("try to convert a slot that is out of the bitmap");
+        }
+
+        (bit_pos, u64_pos, block_pos)
     }
 }
 
