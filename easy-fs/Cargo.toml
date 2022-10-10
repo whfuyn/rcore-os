@@ -11,9 +11,10 @@ bitflags = "1.3"
 static_assertions = "1.1.0"
 
 clap = { version = "4.0.11", features = ["derive"], optional = true }
+anyhow = { version = "1.0.65", features = ["backtrace"], optional = true}
 
 [features]
-build-cli = ["clap"]
+build-cli = ["clap", "anyhow"]
 
 [[bin]]
 name = "easy-fs"
