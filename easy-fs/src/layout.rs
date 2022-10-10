@@ -2,7 +2,7 @@ use crate::efs::EasyFileSystem;
 use crate::{Block, BLOCK_SIZE, BLOCK_BITS};
 use bitflags::bitflags;
 use core::cmp;
-use static_assertions::assert_eq_size;
+use static_assertions::{ assert_eq_size, const_assert_eq };
 
 pub const EASY_FS_MAGIC: u32 = 0xf1f1f1f1;
 const INODE_DIRECT_COUNT: usize = 28;
@@ -10,7 +10,17 @@ const INODE_INDIRECT_COUNT: usize = BLOCK_SIZE / core::mem::size_of::<u32>();
 
 const MAX_FILE_SIZE: usize =
     (INODE_DIRECT_COUNT + INODE_INDIRECT_COUNT + INODE_INDIRECT_COUNT.pow(2)) * BLOCK_SIZE;
-const MAX_NAME_LENGTH: usize = 27;
+// const MAX_FILE_NAME_LENGTH: usize = 27;
+
+// pub const DIR_ENTRY_SIZE: usize = core::mem::size_of::<DirEntry>();
+// assert_eq_size!(DirEntry, [u8; 32]);
+
+const MAX_FILE_NAME_LENGTH: usize = 123;
+
+pub const DIR_ENTRY_SIZE: usize = core::mem::size_of::<DirEntry>();
+assert_eq_size!(DirEntry, [u8; 128]);
+const_assert_eq!(DIR_ENTRY_SIZE, 128);
+
 
 type IndirectBlock = [u32; INODE_INDIRECT_COUNT];
 
@@ -338,95 +348,6 @@ impl DiskInode {
         self.size = new_size;
     }
 
-    // fn alloc_fresh_block(fs: &EasyFileSystem) -> Arc<BlockCache> {
-    //     let new_block = fs.alloc_block().expect("cannot alloc more blocks");
-    //     unsafe {
-    //         new_block.modify(0, |b: &mut Block| b.fill(0));
-    //     }
-    //     new_block
-    // }
-
-    // pub fn resize(&mut self, new_size: u32, fs: &EasyFileSystem) {
-    //     assert!(
-    //         new_size as usize <= MAX_FILE_SIZE,
-    //         "file size limit exceeded"
-    //     );
-
-    //     let old_blocks = Self::blocks_for_size(self.size);
-    //     let new_blocks = Self::blocks_for_size(new_size);
-    //     if self.size < new_size {
-    //         if self.size as usize % BLOCK_SIZE > 0 {
-    //             // clear pass-the-end data at last block
-    //             let last_block_id = self.get_block_id(old_blocks - 1, fs);
-    //             let last_block = fs.get_block(last_block_id as usize);
-    //             let last_pos = self.size as usize % BLOCK_SIZE;
-    //             let f = |b: &mut Block| b[last_pos..].fill(0);
-    //             unsafe { last_block.modify(0, f) }
-    //         }
-    //         for inner_id in old_blocks..new_blocks {
-    //             let new_block = fs.alloc_block().expect("cannot alloc more blocks");
-    //             let f = |b: &mut Block| b.fill(0);
-    //             unsafe { new_block.modify(0, f) };
-    //             self.set_block_id(inner_id, new_block.block_id() as u32, fs);
-    //         }
-    //     } else if self.size > new_size {
-    //         for inner_id in new_blocks..old_blocks {
-    //             let deallocated = self.set_block_id(inner_id, 0, fs);
-    //             fs.dealloc_block(deallocated as usize);
-    //         }
-
-    //         let new_last_block = InnerIndex::new(new_blocks);
-    //         let old_last_block = InnerIndex::new(old_blocks);
-
-    //         // dealloc unused indirect blocks
-    //         use InnerIndex::*;
-    //         match (new_last_block, old_last_block) {
-    //             (Direct(_), Indirect1(_)) => {
-    //                 fs.dealloc_block(self.indirect[0] as usize);
-    //                 self.indirect[0] = 0;
-    //             }
-    //             (Indirect2(begin, _), Indirect2(end, _)) if begin < end => {
-    //                 let indirect2 = fs.get_block(self.indirect[1] as usize);
-    //                 let f = |indirect2: &mut IndirectBlock| {
-    //                     for i in begin..end {
-    //                         fs.dealloc_block(indirect2[i] as usize);
-    //                         indirect2[i] = 0;
-    //                     }
-    //                 };
-    //                 unsafe { indirect2.modify(0, f) }
-    //             }
-    //             (Indirect1(_), Indirect2(indirect2_blocks, _)) => {
-    //                 let indirect2 = fs.get_block(self.indirect[1] as usize);
-    //                 let f = |indirect2: &mut IndirectBlock| {
-    //                     for i in 0..indirect2_blocks {
-    //                         fs.dealloc_block(indirect2[i] as usize);
-    //                         indirect2[i] = 0;
-    //                     }
-    //                 };
-    //                 unsafe { indirect2.modify(0, f) }
-    //                 fs.dealloc_block(self.indirect[1] as usize);
-    //                 self.indirect[1] = 0;
-    //             }
-    //             (Direct(_), Indirect2(indirect2_blocks, _)) => {
-    //                 let indirect2 = fs.get_block(self.indirect[1] as usize);
-    //                 let f = |indirect2: &mut IndirectBlock| {
-    //                     for i in 0..indirect2_blocks {
-    //                         fs.dealloc_block(indirect2[i] as usize);
-    //                         indirect2[i] = 0;
-    //                     }
-    //                 };
-    //                 unsafe { indirect2.modify(0, f) }
-    //                 fs.dealloc_block(self.indirect[0] as usize);
-    //                 self.indirect[0] = 0;
-    //                 fs.dealloc_block(self.indirect[1] as usize);
-    //                 self.indirect[1] = 0;
-    //             }
-    //             _ => (),
-    //         }
-    //     }
-    //     self.size = new_size;
-    // }
-
     pub fn read_at(&self, offset: usize, buf: &mut [u8], fs: &EasyFileSystem) -> usize {
         let (start_inner_id, start_offset) = Self::offset_to_inner(offset);
 
@@ -455,7 +376,7 @@ impl DiskInode {
             inner_id += 1;
             block_start = 0;
         }
-        // bytes readed
+        // bytes read
         buf_start
     }
 
@@ -509,49 +430,6 @@ impl DiskInode {
         }
     }
 
-    // fn set_block_id(&mut self, inner_id: usize, block_id: u32, fs: &EasyFileSystem) -> u32 {
-    //     match InnerIndex::new(inner_id) {
-    //         InnerIndex::Direct(id) => mem::replace(&mut self.direct[id], block_id),
-    //         InnerIndex::Indirect1(id) => {
-    //             let indirect1 = if self.indirect[0] != 0 {
-    //                 fs.get_block(self.indirect[0] as usize)
-    //             } else {
-    //                 let indirect1_block = fs.alloc_block().expect("we run out of blocks. QAQ");
-    //                 self.indirect[0] = indirect1_block.block_id() as u32;
-    //                 indirect1_block
-    //             };
-    //             let f =
-    //                 |indirect1: &mut IndirectBlock| mem::replace(&mut indirect1[id], block_id);
-    //             // SAFETY: arbitrary initialized data would be valid for this type
-    //             unsafe { indirect1.modify(0, f) }
-    //         }
-    //         InnerIndex::Indirect2(id1, id2) => {
-    //             let indirect2_2 = {
-    //                 let indirect2_1 = if self.indirect[1] != 0 {
-    //                     fs.get_block(self.indirect[1] as usize)
-    //                 } else {
-    //                     let indirect2_1 = fs.alloc_block().expect("we run out of blocks. QAQ");
-    //                     self.indirect[1] = indirect2_1.block_id() as u32;
-    //                     indirect2_1
-    //                 };
-    //                 let f = |indirect2_1: &IndirectBlock| indirect2_1[id1];
-    //                 let indirect2_2_block_id = unsafe { indirect2_1.read(0, f) };
-    //                 if indirect2_2_block_id != 0 {
-    //                     fs.get_block(indirect2_2_block_id as usize)
-    //                 } else {
-    //                     let indirect2_2 = fs.alloc_block().expect("we run out of blocks. QAQ");
-    //                     let f = |indirect2_1: &mut IndirectBlock| indirect2_1[id2] = indirect2_2.block_id() as u32;
-    //                     unsafe { indirect2_1.modify(0, f) }
-    //                     indirect2_2
-    //                 }
-    //             };
-    //             let f =
-    //                 |indirect2_2: &mut IndirectBlock| mem::replace(&mut indirect2_2[id2], block_id);
-    //             unsafe { indirect2_2.modify(0, f) }
-    //         }
-    //     }
-    // }
-
     fn offset_to_inner(offset: usize) -> (usize, usize) {
         let inner_id = offset / BLOCK_SIZE;
         let block_offset = offset % BLOCK_SIZE;
@@ -559,28 +437,24 @@ impl DiskInode {
     }
 }
 
-pub const DIR_ENTRY_SIZE: usize = core::mem::size_of::<DirEntry>();
-
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct DirEntry {
-    name: [u8; MAX_NAME_LENGTH + 1],
+    name: [u8; MAX_FILE_NAME_LENGTH + 1],
     inode_id: u32,
 }
-
-assert_eq_size!(DirEntry, [u8; 32]);
 
 impl DirEntry {
     pub fn empty() -> Self {
         Self {
-            name: [0; MAX_NAME_LENGTH + 1],
+            name: [0; MAX_FILE_NAME_LENGTH + 1],
             inode_id: 0,
         }
     }
 
     pub fn new(name: &str, inode_id: u32) -> Self {
-        assert!(name.len() <= MAX_NAME_LENGTH, "entry name too long",);
-        let mut name_buf = [0; MAX_NAME_LENGTH + 1];
+        assert!(name.len() <= MAX_FILE_NAME_LENGTH, "entry name `{name}` too long");
+        let mut name_buf = [0; MAX_FILE_NAME_LENGTH + 1];
         name_buf[..name.len()].copy_from_slice(name.as_bytes());
         name_buf[name.len()] = 0;
         Self {
@@ -601,11 +475,11 @@ impl DirEntry {
         self.inode_id
     }
 
-    pub fn as_bytes(&self) -> &[u8; 32] {
+    pub fn as_bytes(&self) -> &[u8; DIR_ENTRY_SIZE] {
         unsafe { core::mem::transmute(self) }
     }
 
-    pub fn as_bytes_mut(&mut self) -> &mut [u8; 32] {
+    pub fn as_bytes_mut(&mut self) -> &mut [u8; DIR_ENTRY_SIZE] {
         unsafe { core::mem::transmute(self) }
     }
 }
